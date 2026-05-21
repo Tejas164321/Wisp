@@ -9,6 +9,9 @@ export interface Message {
   nickname: string;
   text: string;
   createdAt: number;
+  replyToId?: string;
+  replyToNickname?: string;
+  replyToText?: string;
 }
 
 interface SocketContextType {
@@ -18,13 +21,15 @@ interface SocketContextType {
   onlineCount: number;
   messages: Message[];
   typingUsers: string[];
-  sendMessage: (text: string) => void;
+  sendMessage: (text: string, replyTo?: { id: string; nickname: string; text: string }) => void;
   sendTypingStatus: (isTyping: boolean) => void;
   error: string | null;
   clearError: () => void;
   regenerateUserNickname: () => void;
   soundEnabled: boolean;
   toggleSoundEnabled: () => void;
+  isScrolledUp: boolean;
+  setIsScrolledUp: (val: boolean) => void;
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
@@ -32,6 +37,7 @@ const SocketContext = createContext<SocketContextType | undefined>(undefined);
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [nickname, setNickname] = useState<string>('');
+  const [clientId, setClientId] = useState<string>('');
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [isPollingMode, setIsPollingMode] = useState(false);
   const isConnected = isSocketConnected || isPollingMode;
@@ -40,21 +46,33 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [isScrolledUp, setIsScrolledUp] = useState<boolean>(false);
   
   // Track typing timeout to clear status client side after inactivity
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isCurrentlyTypingRef = useRef(false);
 
-  // Keep sound enabled state fresh in stale socket event closure
+  // Keep state variables fresh in stale socket event closure
   const soundEnabledRef = useRef(soundEnabled);
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
+  const nicknameRef = useRef(nickname);
+  useEffect(() => {
+    nicknameRef.current = nickname;
+  }, [nickname]);
+
+  const isScrolledUpRef = useRef(isScrolledUp);
+  useEffect(() => {
+    isScrolledUpRef.current = isScrolledUp;
+  }, [isScrolledUp]);
+
   // Lazy load audio utility properties to avoid server-side render mismatch
   const audioRef = useRef<{
     playReceiveSound: () => void;
     playSendSound: () => void;
+    playUnreadReceiveSound: () => void;
     triggerHaptic: (type: 'light' | 'success' | 'double') => void;
   } | null>(null);
 
@@ -64,7 +82,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // 1. Update nickname post-hydrate
+  // 1. Update nickname and clientId post-hydrate
   useEffect(() => {
     if (typeof window !== 'undefined') {
       let storedNickname = localStorage.getItem('ghostroom_nickname');
@@ -76,13 +94,18 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setTimeout(() => {
         setNickname(finalNickname);
       }, 0);
+
+      let storedClientId = localStorage.getItem('ghostroom_client_id');
+      if (!storedClientId) {
+        storedClientId = 'client-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+        localStorage.setItem('ghostroom_client_id', storedClientId);
+      }
+      setClientId(storedClientId);
     }
   }, []);
 
-  // 2. Initialise Socket IO Client connection
+  // 2. Initialise Socket IO Client connection on mount
   useEffect(() => {
-    if (!nickname) return; // Wait until nickname is resolved from localStorage
-
     // Socket.IO client auto-resolves to current browser window host
     const socketClient = io({
       autoConnect: true,
@@ -134,9 +157,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Play subtle sound alert + haptic vibe if received from others
-        if (newMsg.nickname !== nickname) {
+        if (newMsg.nickname !== nicknameRef.current) {
           if (soundEnabledRef.current && audioRef.current) {
-            audioRef.current.playReceiveSound();
+            if (isScrolledUpRef.current) {
+              audioRef.current.playUnreadReceiveSound();
+            } else {
+              audioRef.current.playReceiveSound();
+            }
           }
           if (audioRef.current) {
             audioRef.current.triggerHaptic('light');
@@ -152,7 +179,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     socketClient.on('typing', (data: { nickname: string }) => {
-      if (data.nickname && data.nickname !== nickname) {
+      if (data.nickname && data.nickname !== nicknameRef.current) {
         setTypingUsers((prev) => {
           if (prev.includes(data.nickname)) return prev;
           return [...prev, data.nickname];
@@ -185,15 +212,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(fallbackTimeout);
       socketClient.disconnect();
     };
-  }, [nickname]);
+  }, []);
 
   // 3. Polling loop fallback when Socket.io is unavailable (e.g. on Vercel serverless)
   useEffect(() => {
-    if (!isPollingMode || !nickname) return;
+    if (!isPollingMode || !nickname || !clientId) return;
 
     const fetchPoll = async () => {
       try {
-        const res = await fetch(`/api/messages?nickname=${encodeURIComponent(nickname)}`);
+        const res = await fetch(`/api/messages?nickname=${encodeURIComponent(nickname)}&clientId=${encodeURIComponent(clientId)}`);
         if (res.ok) {
           const data = await res.json();
           if (data.messages) {
@@ -231,10 +258,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearInterval(interval);
     };
-  }, [isPollingMode, nickname]);
+  }, [isPollingMode, nickname, clientId]);
 
   // Actions
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, replyTo?: { id: string; nickname: string; text: string }) => {
     if (isPollingMode) {
       const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const optimisticMessage: Message = {
@@ -242,6 +269,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         nickname,
         text,
         createdAt: Date.now(),
+        replyToId: replyTo?.id,
+        replyToNickname: replyTo?.nickname,
+        replyToText: replyTo?.text,
       };
 
       // Play sound + haptic immediately for responsive feedback
@@ -261,7 +291,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ nickname, text }),
+          body: JSON.stringify({ 
+            nickname, 
+            text, 
+            clientId,
+            replyToId: replyTo?.id,
+            replyToNickname: replyTo?.nickname,
+            replyToText: replyTo?.text,
+          }),
         });
 
         if (!res.ok) {
@@ -289,7 +326,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (socket && isSocketConnected) {
-      socket.emit('message', { nickname, text });
+      socket.emit('message', { 
+        nickname, 
+        text,
+        replyToId: replyTo?.id,
+        replyToNickname: replyTo?.nickname,
+        replyToText: replyTo?.text,
+      });
       
       // Trigger soft send chime + subtle haptic vibration
       if (soundEnabledRef.current && audioRef.current) {
@@ -380,6 +423,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         regenerateUserNickname,
         soundEnabled,
         toggleSoundEnabled,
+        isScrolledUp,
+        setIsScrolledUp,
       }}
     >
       {children}

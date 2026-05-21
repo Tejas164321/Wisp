@@ -45,18 +45,21 @@ export interface Message {
   nickname: string;
   text: string;
   createdAt: number;
+  replyToId?: string;
+  replyToNickname?: string;
+  replyToText?: string;
 }
 
 /**
- * Save a message to Redis with a 24 hour TTL, or store in memory if Redis is absent.
+ * Save a message to Redis with a 3 hour TTL, or store in memory if Redis is absent.
  */
 export async function saveMessage(msg: Message): Promise<void> {
   const redis = getRedis();
   
   if (redis) {
     try {
-      // 1. Set individual key value with 24 hours (86400 seconds) expiration (TTL)
-      await redis.set(`ghostroom:message:${msg.id}`, JSON.stringify(msg), { ex: 86400 });
+      // 1. Set individual key value with 3 hours (10800 seconds) expiration (TTL)
+      await redis.set(`ghostroom:message:${msg.id}`, JSON.stringify(msg), { ex: 10800 });
       
       // 2. LPUSH to index list
       await redis.lpush('ghostroom:message_ids', msg.id);
@@ -73,7 +76,7 @@ export async function saveMessage(msg: Message): Promise<void> {
 }
 
 /**
- * Retrieve current message history (under 24 hours old).
+ * Retrieve current message history (under 3 hours old).
  */
 export async function fetchMessageHistory(): Promise<Message[]> {
   const redis = getRedis();
@@ -143,9 +146,9 @@ function getFromMemory(): Message[] {
 
 function cleanupMemory(): void {
   const now = Date.now();
-  const dayInMillis = 24 * 60 * 60 * 1000;
-  // Expressive 24 hour TTL filtering
-  memoryMessages = memoryMessages.filter(msg => (now - msg.createdAt) < dayInMillis);
+  const threeHoursInMillis = 3 * 60 * 60 * 1000;
+  // Expressive 3 hour TTL filtering
+  memoryMessages = memoryMessages.filter(msg => (now - msg.createdAt) < threeHoursInMillis);
   // Cap list size
   if (memoryMessages.length > 200) {
     memoryMessages = memoryMessages.slice(memoryMessages.length - 200);

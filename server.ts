@@ -61,7 +61,7 @@ app.prepare().then(() => {
     }
 
     // 2. Handle incoming chat messages
-    socket.on('message', async (data: { nickname: string; text: string }) => {
+    socket.on('message', async (data: { nickname: string; text: string; replyToId?: string; replyToNickname?: string; replyToText?: string }) => {
       try {
         const { nickname, text } = data;
         const socketId = socket.id;
@@ -98,9 +98,12 @@ app.prepare().then(() => {
           nickname: nickname || 'AnonymousGhost',
           text: processedText,
           createdAt: now,
+          replyToId: data.replyToId,
+          replyToNickname: data.replyToNickname,
+          replyToText: data.replyToText,
         };
 
-        // Save message (automatically expires in 24 hours under Redis or memory)
+        // Save message (automatically expires in 3 hours under Redis or memory)
         await saveMessage(newMsg);
 
         // Broadcast to everyone

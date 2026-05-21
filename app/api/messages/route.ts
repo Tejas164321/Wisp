@@ -5,16 +5,17 @@ import { sanitizeMessage, filterBadWords, isSpam } from '@/lib/chat-utils';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const nickname = searchParams.get('nickname');
+  const clientId = searchParams.get('clientId');
 
   let onlineCount = 1;
   const redis = getRedis();
 
-  if (redis && nickname) {
+  if (redis && (clientId || nickname)) {
     try {
-      const cleanNickname = nickname.trim();
-      if (cleanNickname) {
+      const presenceId = (clientId || nickname || '').trim();
+      if (presenceId) {
         // Track presence: key expires in 15 seconds
-        await redis.set(`ghostroom:presence:${cleanNickname}`, '1', { ex: 15 });
+        await redis.set(`ghostroom:presence:${presenceId}`, '1', { ex: 15 });
       }
       
       // Retrieve count of active presence keys
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { nickname, text } = body;
+    const { nickname, text, clientId, replyToId, replyToNickname, replyToText } = body;
     const now = Date.now();
 
     const redis = getRedis();
@@ -75,14 +76,20 @@ export async function POST(request: Request) {
       nickname: nickname || 'AnonymousGhost',
       text: processedText,
       createdAt: now,
+      replyToId,
+      replyToNickname,
+      replyToText,
     };
 
     // 5. Save message
     await saveMessage(newMsg);
 
     // Keep presence active
-    if (redis && nickname) {
-      await redis.set(`ghostroom:presence:${nickname}`, '1', { ex: 15 });
+    if (redis && (clientId || nickname)) {
+      const presenceId = (clientId || nickname || '').trim();
+      if (presenceId) {
+        await redis.set(`ghostroom:presence:${presenceId}`, '1', { ex: 15 });
+      }
     }
 
     return NextResponse.json({ success: true, message: newMsg });
