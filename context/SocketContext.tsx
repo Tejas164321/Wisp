@@ -91,6 +91,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 3000, // Short timeout for faster fallback to polling on Vercel
+      transports: ['websocket'], // Crucial for multi-replica Cloud Run deployments to bypass session stickiness issues on HTTP polling
     });
 
     let fallbackTimeout: NodeJS.Timeout;
