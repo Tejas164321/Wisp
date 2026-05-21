@@ -6,7 +6,7 @@ import { saveMessage, fetchMessageHistory, Message } from './lib/redis';
 import { sanitizeMessage, filterBadWords, isSpam } from './lib/chat-utils';
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = 'localhost';
+const hostname = process.env.HOSTNAME || '0.0.0.0';
 const port = 3000;
 
 // Initialize Next.js app in custom server mode
@@ -20,6 +20,13 @@ app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     try {
       const parsedUrl = parse(req.url || '', true);
+      const { pathname } = parsedUrl;
+
+      // Prevent Next.js from intercepting Socket.io requests (causes 308 redirects and 404s)
+      if (pathname && (pathname === '/socket.io' || pathname.startsWith('/socket.io/'))) {
+        return;
+      }
+
       handle(req, res, parsedUrl);
     } catch (err) {
       console.error('Error handling request in HTTP server:', err);

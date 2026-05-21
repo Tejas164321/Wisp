@@ -42,8 +42,24 @@ export default function Home() {
   const [inputVal, setInputVal] = useState('');
   const [isTypingLocal, setIsTypingLocal] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [cooldownLeft, setCooldownLeft] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Monitor the client-side whisper rate-limit cooldown
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownLeft]);
 
   // Auto-scroll to bottom of message list on state updates
   useEffect(() => {
@@ -112,6 +128,7 @@ export default function Home() {
 
   // Dispatch message send
   const handleSend = () => {
+    if (cooldownLeft > 0) return;
     const cleanMsg = inputVal.trim();
     if (!cleanMsg) return;
 
@@ -120,6 +137,9 @@ export default function Home() {
     setIsTypingLocal(false);
     sendTypingStatus(false);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    
+    // Set 5-second rate limit cooldown to prevent spamming
+    setCooldownLeft(5);
   };
 
   // Helper: Format timestamp (e.g., 10:45 AM)
@@ -248,12 +268,14 @@ export default function Home() {
           </div>
 
           {/* Global Network / Online status */}
-          <div className="flex items-center space-x-1.5 rounded-full border border-ghost-light-border bg-ghost-light-card px-2.5 py-1 text-xs text-neutral-600 dark:border-ghost-dark-border dark:bg-ghost-dark-card dark:text-ghost-dark-sec">
+          <div className="flex items-center space-x-1.5 rounded-full border border-ghost-light-border bg-ghost-light-card px-2.5 py-1 text-xs text-neutral-600 dark:border-ghost-dark-border dark:bg-ghost-dark-card dark:text-ghost-dark-sec shrink-0">
             <span className="relative flex h-2 w-2 mr-1">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
             </span>
-            <span className="font-mono">{onlineCount} {onlineCount === 1 ? 'ghost' : 'ghosts'} online</span>
+            <span className="font-mono text-[10px] sm:text-xs">
+              {onlineCount} <span className="hidden xs:inline">{onlineCount === 1 ? 'ghost' : 'ghosts'} online</span>
+            </span>
           </div>
 
           {/* Right toggle panel */}
@@ -307,18 +329,19 @@ export default function Home() {
 
       {/* 2. Top Banner (Shows allocated auto generated identity) */}
       <section className="w-full border-b border-ghost-light-border bg-neutral-50 dark:bg-ghost-dark-card/30 dark:border-ghost-dark-border">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-2 text-xs font-mono">
-          <div className="flex items-center space-x-2 text-ghost-light-sec dark:text-ghost-dark-sec text-[11px]">
-            <Sparkle className="h-3 w-3 text-zinc-400" />
-            <span>Anonymous handle assigned:</span>
-            <span className="font-semibold text-neutral-800 dark:text-neutral-200 bg-neutral-150 dark:bg-neutral-900 px-1.5 py-0.5 rounded border border-ghost-light-border dark:border-ghost-dark-border">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-3 sm:px-4 py-2 text-xs font-mono">
+          <div className="flex items-center space-x-1.5 text-ghost-light-sec dark:text-ghost-dark-sec text-[10px] sm:text-[11px] truncate mr-2">
+            <Sparkle className="h-3 w-3 text-zinc-400 shrink-0" />
+            <span className="hidden xs:inline shrink-0">Anonymous handle assigned:</span>
+            <span className="xs:hidden shrink-0">Handle:</span>
+            <span className="font-semibold text-neutral-800 dark:text-neutral-200 bg-neutral-150 dark:bg-neutral-900 px-1.5 py-0.5 rounded border border-ghost-light-border dark:border-ghost-dark-border truncate max-w-[120px] xs:max-w-none">
               {nickname || 'Resolving...'}
             </span>
           </div>
 
           <button
             onClick={regenerateUserNickname}
-            className="flex items-center space-x-1.5 text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100 transition-colors px-2 py-1 rounded hover:bg-neutral-200/50 dark:hover:bg-neutral-800/30 cursor-pointer text-[10px]"
+            className="flex items-center space-x-1 text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100 transition-colors px-1.5 py-0.5 rounded hover:bg-neutral-200/50 dark:hover:bg-neutral-800/30 cursor-pointer text-[9px] sm:text-[10px] shrink-0"
             title="Generate a new random identity"
           >
             <RefreshCw className="h-2.5 w-2.5" />
@@ -443,45 +466,73 @@ export default function Home() {
 
           {/* 4. Chat Input Box */}
           <div className="border-t border-ghost-light-border dark:border-ghost-dark-border py-4 w-full">
-            <div className="relative flex flex-col p-2 bg-ghost-light-card border border-ghost-light-border dark:bg-ghost-dark-card dark:border-ghost-dark-border rounded-xl focus-within:ring-1 focus-within:ring-zinc-400 focus-within:border-zinc-400 dark:focus-within:ring-zinc-600 dark:focus-within:border-zinc-600 transition-all">
+            <div className={`relative flex flex-col p-2 bg-ghost-light-card border border-ghost-light-border dark:bg-ghost-dark-card dark:border-ghost-dark-border rounded-xl focus-within:ring-1 focus-within:ring-zinc-400 focus-within:border-zinc-400 dark:focus-within:ring-zinc-600 dark:focus-within:border-zinc-600 transition-all overflow-hidden ${
+              cooldownLeft > 0 ? 'opacity-85 select-none bg-neutral-50/50 dark:bg-zinc-950/20' : ''
+            }`}>
               
+              {/* Cooldown progress tracker line */}
+              {cooldownLeft > 0 && (
+                <motion.div 
+                  initial={{ width: "100%" }}
+                  animate={{ width: "0%" }}
+                  transition={{ duration: 5, ease: "linear" }}
+                  className="absolute top-0 left-0 h-[2px] bg-neutral-500 dark:bg-zinc-400"
+                />
+              )}
+
               {/* Text area input for message writing */}
               <textarea
-                value={inputVal}
+                value={cooldownLeft > 0 ? "" : inputVal}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder={`Whisper to the void...`}
-                className="w-full resize-none bg-transparent px-3 py-2 text-sm text-ghost-light-text dark:text-ghost-dark-text outline-none focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-600 custom-scrollbar min-h-[44px] max-h-[120px]"
+                placeholder={cooldownLeft > 0 ? `Please wait ${cooldownLeft}s before whispering again...` : `Whisper to the void...`}
+                className={`w-full resize-none bg-transparent px-3 py-2 text-sm outline-none focus:outline-none custom-scrollbar min-h-[44px] max-h-[120px] transition-all ${
+                  cooldownLeft > 0 
+                  ? 'text-zinc-400 dark:text-zinc-500 placeholder-zinc-450 dark:placeholder-zinc-650 cursor-not-allowed' 
+                  : 'text-ghost-light-text dark:text-ghost-dark-text placeholder-zinc-400 dark:placeholder-zinc-650'
+                }`}
                 rows={1}
-                disabled={!isConnected}
+                disabled={!isConnected || cooldownLeft > 0}
                 aria-label="Whisper editor input"
               />
 
               {/* Input Action Controls Footer Row */}
               <div className="flex items-center justify-between border-t border-neutral-100 dark:border-zinc-800/80 pt-2 px-2 select-none">
                 
-                {/* Character count scale */}
-                <span className={`font-mono text-[10px] ${
-                  inputVal.length > 180 
-                    ? 'text-yellow-500 font-bold' 
-                    : 'text-zinc-400 dark:text-zinc-600'
-                }`}>
-                  {inputVal.length}/200
-                </span>
+                {/* Character count scale or warning */}
+                {cooldownLeft > 0 ? (
+                  <span className="font-mono text-[9px] text-zinc-500 animate-pulse">
+                    Muted for anti-spam: {cooldownLeft}s
+                  </span>
+                ) : (
+                  <span className={`font-mono text-[10px] ${
+                    inputVal.length > 180 
+                      ? 'text-yellow-500 font-bold' 
+                      : 'text-zinc-400 dark:text-zinc-600'
+                  }`}>
+                    {inputVal.length}/200
+                  </span>
+                )}
 
                 {/* Submitting controls */}
                 <div className="flex items-center space-x-2">
                   <span className="hidden md:inline-block text-[9px] text-zinc-400 font-mono">
-                    Press <span className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-zinc-700 px-1 rounded">Enter</span> to send
+                    {cooldownLeft > 0 ? "Spam shield active" : "Press Enter to send"}
                   </span>
                   
                   <button
                     onClick={handleSend}
-                    disabled={!isConnected || !inputVal.trim()}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-black hover:bg-zinc-800 disabled:bg-neutral-100 dark:bg-zinc-200 dark:hover:bg-white dark:disabled:bg-zinc-800/40 text-white dark:text-black disabled:text-neutral-400 dark:disabled:text-zinc-600 transition-colors shadow-sm cursor-pointer"
+                    disabled={!isConnected || !inputVal.trim() || cooldownLeft > 0}
+                    className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-black hover:bg-zinc-800 disabled:bg-neutral-100 dark:bg-zinc-200 dark:hover:bg-white dark:disabled:bg-zinc-800/40 text-white dark:text-black disabled:text-neutral-400 dark:disabled:text-zinc-600 transition-colors shadow-sm cursor-pointer overflow-hidden font-mono"
                     aria-label="Send whisper message"
                   >
-                    <Send className="h-3.5 w-3.5" />
+                    {cooldownLeft > 0 ? (
+                      <span className="text-[11px] font-bold text-neutral-500 dark:text-zinc-400">
+                        {cooldownLeft}
+                      </span>
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
 
