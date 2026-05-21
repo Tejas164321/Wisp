@@ -518,7 +518,7 @@ export default function Home() {
                 </button>
               </div>
 
-            </div>iv>
+            </div>
           </div>
         </div>
       </main>
@@ -609,4 +609,3 @@ export default function Home() {
     </>
   );
 }
-
