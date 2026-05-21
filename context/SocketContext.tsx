@@ -197,7 +197,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           if (data.messages) {
-            setMessages(data.messages);
+            setMessages((prev) => {
+              // Extract any optimistic messages currently in the local state
+              const optimisticMsgs = prev.filter((m) => m.id.startsWith('optimistic-'));
+              
+              // Filter out optimistic messages that have been confirmed by the server response
+              const pendingOptimistics = optimisticMsgs.filter((opt) => {
+                const isConfirmed = data.messages.some((m: Message) => 
+                  m.nickname === opt.nickname &&
+                  m.text === opt.text &&
+                  Math.abs(m.createdAt - opt.createdAt) < 15000
+                );
+                return !isConfirmed;
+              });
+              
+              // Merge server messages with pending optimistic ones
+              return [...data.messages, ...pendingOptimistics];
+            });
           }
           if (typeof data.onlineCount === 'number') {
             setOnlineCount(data.onlineCount);
@@ -220,6 +236,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   // Actions
   const sendMessage = async (text: string) => {
     if (isPollingMode) {
+      const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const optimisticMessage: Message = {
+        id: tempId,
+        nickname,
+        text,
+        createdAt: Date.now(),
+      };
+
+      // Play sound + haptic immediately for responsive feedback
+      if (soundEnabledRef.current && audioRef.current) {
+        audioRef.current.playSendSound();
+      }
+      if (audioRef.current) {
+        audioRef.current.triggerHaptic('success');
+      }
+
+      // Append locally immediately
+      setMessages((prev) => [...prev, optimisticMessage]);
+
       try {
         const res = await fetch('/api/messages', {
           method: 'POST',
@@ -232,27 +267,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) {
           const data = await res.json();
           setError(data.error || 'A spatial anomaly occurred. Whisper failed.');
+          // Remove the optimistic message on failure
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
           return;
         }
 
         const data = await res.json();
         if (data.success && data.message) {
-          if (soundEnabledRef.current && audioRef.current) {
-            audioRef.current.playSendSound();
-          }
-          if (audioRef.current) {
-            audioRef.current.triggerHaptic('success');
-          }
-
-          // Append locally immediately for responsiveness
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === data.message.id)) return prev;
-            return [...prev, data.message];
-          });
+          // Replace the optimistic message with the official server message
+          setMessages((prev) => 
+            prev.map((m) => m.id === tempId ? data.message : m)
+          );
         }
       } catch (err) {
         console.error('Failed to send message in polling mode:', err);
         setError('Connection interrupted. Unable to reach a spatial gateway.');
+        // Remove the optimistic message on failure
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
       return;
     }
