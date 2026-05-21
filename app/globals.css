@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-ghost-dark-bg: #0A0A0A;
+  --color-ghost-dark-card: #111111;
+  --color-ghost-dark-border: #1E1E1E;
+  --color-ghost-dark-text: #F5F5F5;
+  --color-ghost-dark-sec: #A1A1AA;
+  
+  --color-ghost-light-bg: #FFFFFF;
+  --color-ghost-light-card: #F8F8F8;
+  --color-ghost-light-border: #EAEAEA;
+  --color-ghost-light-text: #111111;
+  --color-ghost-light-sec: #666666;
+  
+  --color-accent-blue: #3B82F6;
+  --color-accent-green: #10B981;
+}
+
+/* Base custom interactive definitions */
+@layer base {
+  body {
+    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+                border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+                color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Ultra clean scrolling viewports */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: var(--color-ghost-dark-border);
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-ghost-light-border);
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

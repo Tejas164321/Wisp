@@ -1,0 +1,6 @@
+{
+  "name": "Wisp",
+  "description": "Fun anonymous single-room realtime chat platform where users can whisper without revealing identity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
