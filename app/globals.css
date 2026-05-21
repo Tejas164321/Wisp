@@ -1,19 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-ghost-dark-bg: #0A0A0A;
-  --color-ghost-dark-card: #111111;
-  --color-ghost-dark-border: #1E1E1E;
-  --color-ghost-dark-text: #F5F5F5;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Space Grotesk', sans-serif;
+
+  --color-ghost-dark-bg: #09090B;
+  --color-ghost-dark-card: #18181B;
+  --color-ghost-dark-border: #27272A;
+  --color-ghost-dark-text: #F4F4F5;
   --color-ghost-dark-sec: #A1A1AA;
   
-  --color-ghost-light-bg: #FFFFFF;
-  --color-ghost-light-card: #F8F8F8;
-  --color-ghost-light-border: #EAEAEA;
-  --color-ghost-light-text: #111111;
-  --color-ghost-light-sec: #666666;
+  --color-ghost-light-bg: #F4F4F5;
+  --color-ghost-light-card: #FFFFFF;
+  --color-ghost-light-border: #E4E4E7;
+  --color-ghost-light-text: #09090B;
+  --color-ghost-light-sec: #71717A;
   
   --color-accent-blue: #3B82F6;
   --color-accent-green: #10B981;
@@ -22,6 +28,7 @@
 /* Base custom interactive definitions */
 @layer base {
   body {
+    font-family: var(--font-sans);
     transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
                 border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
                 color 0.2s cubic-bezier(0.16, 1, 0.3, 1);

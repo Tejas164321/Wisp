@@ -185,30 +185,30 @@ export default function Home() {
         >
           {/* Header block for message group (Name + first timestamp) */}
           <div className={`flex items-baseline mb-1 space-x-2 text-xs select-none ${isSelf ? 'flex-row-reverse space-x-reverse' : 'flex-row'}`}>
-            <span className={`font-mono font-medium tracking-tight px-1.5 py-0.5 rounded ${
+            <span className={`font-mono font-medium tracking-tight px-2 py-0.5 rounded-md text-[10px] border ${
               isSelf 
-                ? 'bg-zinc-800 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-400' 
-                : 'text-ghost-light-sec dark:text-ghost-dark-sec'
+                ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 border-violet-100/60 dark:border-violet-900/30' 
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200/50 dark:border-zinc-700/30'
             }`}>
               {group.nickname}
-              {isSelf && <span className="opacity-60 text-[10px] ml-1">(You)</span>}
+              {isSelf && <span className="opacity-60 text-[9px] ml-1">(You)</span>}
             </span>
-            <span className="text-[10px] text-zinc-400 dark:text-zinc-600">
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
               {formatTime(group.baseTimestamp)}
             </span>
           </div>
 
           {/* List of lines written by that user in succession */}
-          <div className={`flex flex-col space-y-1 max-w-[85%] md:max-w-[70%] ${isSelf ? 'items-end' : 'items-start'}`}>
+          <div className={`flex flex-col space-y-1.5 max-w-[85%] md:max-w-[70%] ${isSelf ? 'items-end' : 'items-start'}`}>
             {group.lines.map((line: any, index: number) => {
               const borderStyles = isSelf 
-                ? 'bg-zinc-900 border border-zinc-700/60 text-zinc-100 rounded-2xl rounded-tr-sm' 
-                : 'bg-ghost-light-card border border-ghost-light-border dark:bg-ghost-dark-card dark:border-ghost-dark-border text-ghost-light-text dark:text-ghost-dark-text rounded-2xl rounded-tl-sm';
+                ? 'bg-gradient-to-br from-violet-600 to-indigo-600 border border-violet-500/30 text-white rounded-2xl rounded-tr-sm shadow-md shadow-indigo-500/10' 
+                : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 text-zinc-800 dark:text-zinc-100 rounded-2xl rounded-tl-sm shadow-[0_2px_8px_-2px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]';
 
               return (
                 <div
                   key={line.id}
-                  className={`group relative px-3.5 py-2.5 shadow-sm transition-all duration-150 select-text ${borderStyles}`}
+                  className={`group relative px-4 py-2.5 transition-all duration-150 select-text ${borderStyles}`}
                 >
                   <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{line.text}</p>
                   
@@ -233,34 +233,36 @@ export default function Home() {
 
   return (
     <>
-      <div className="flex flex-col min-h-screen bg-ghost-light-bg text-ghost-light-text dark:bg-ghost-dark-bg dark:text-ghost-dark-text selection:bg-zinc-200 dark:selection:bg-zinc-800">
+      <div className="flex flex-col h-screen h-[100dvh] overflow-hidden bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900 text-ghost-light-text dark:text-ghost-dark-text selection:bg-zinc-200 dark:selection:bg-zinc-800">
       
       {/* 1. Header Navigation Bar */}
-      <header className="sticky top-0 z-40 w-full border-b border-ghost-light-border bg-white/80 dark:border-ghost-dark-border dark:bg-ghost-dark-bg/80 backdrop-blur-md select-none">
-        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
+      <header className="sticky top-0 z-40 w-full border-b border-zinc-200/80 dark:border-zinc-800 bg-white/75 dark:bg-zinc-950/75 backdrop-blur-xl select-none transition-all">
+        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4">
           
           {/* Brand Logo */}
-          <div className="flex items-center space-x-2 select-none">
-            <Ghost className="h-5 w-5 text-neutral-900 dark:text-white" />
-            <span className="font-sans font-medium tracking-tight text-neutral-900 dark:text-white">
+          <div className="flex items-center space-x-3 select-none">
+            <div className="p-1.5 bg-gradient-to-br from-violet-600/10 to-indigo-600/10 dark:from-violet-400/10 dark:to-indigo-400/10 rounded-xl border border-violet-500/20 dark:border-violet-400/20">
+              <Ghost className="h-7 w-7 text-indigo-600 dark:text-indigo-400 filter drop-shadow-[0_0_6px_rgba(99,102,241,0.3)] animate-float" />
+            </div>
+            <span className="font-display font-bold text-xl md:text-2xl tracking-tight bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-violet-400 dark:to-indigo-400 bg-clip-text text-transparent">
               Wisp
             </span>
           </div>
 
           {/* Global Network / Online status */}
-          <div className="flex items-center space-x-1.5 rounded-full border border-ghost-light-border bg-ghost-light-card px-2.5 py-1 text-xs text-neutral-600 dark:border-ghost-dark-border dark:bg-ghost-dark-card dark:text-ghost-dark-sec">
+          <div className="flex items-center space-x-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-3 py-1 text-xs text-zinc-600 dark:text-zinc-400 shadow-sm backdrop-blur-sm">
             <span className="relative flex h-2 w-2 mr-1">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
             </span>
-            <span className="font-mono">{onlineCount} {onlineCount === 1 ? 'ghost' : 'ghosts'} online</span>
+            <span className="font-mono text-[11px] font-medium">{onlineCount} {onlineCount === 1 ? 'ghost' : 'ghosts'} online</span>
           </div>
 
           {/* Right toggle panel */}
           <div className="flex items-center space-x-2">
             
             {/* Network Indicator status */}
-            <div className="text-xs">
+            <div className="text-xs mr-1">
               {isConnected ? (
                 <span className="text-emerald-500" title="Connected in Sanctuary">
                   <Wifi className="h-4.5 w-4.5" />
@@ -276,14 +278,14 @@ export default function Home() {
             <button
               id="sound_switch"
               onClick={toggleSoundEnabled}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-ghost-light-border bg-ghost-light-card text-neutral-800 hover:bg-neutral-100 dark:border-ghost-dark-border dark:bg-ghost-dark-card dark:text-neutral-200 dark:hover:bg-neutral-800/80 transition-colors cursor-pointer"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-800 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
               aria-label="Toggle notification sounds"
               title={soundEnabled ? "Mute whispers" : "Unmute whispers"}
             >
               {soundEnabled ? (
                 <Volume2 className="h-4 w-4" />
               ) : (
-                <VolumeX className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
+                <VolumeX className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />
               )}
             </button>
 
@@ -291,7 +293,7 @@ export default function Home() {
             <button
               id="theme_switch"
               onClick={toggleTheme}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-ghost-light-border bg-ghost-light-card text-neutral-800 hover:bg-neutral-100 dark:border-ghost-dark-border dark:bg-ghost-dark-card dark:text-neutral-200 dark:hover:bg-neutral-800/80 transition-colors cursor-pointer"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-800 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
               aria-label="Toggle visual theme"
             >
               {theme === 'dark' ? (
@@ -306,22 +308,22 @@ export default function Home() {
       </header>
 
       {/* 2. Top Banner (Shows allocated auto generated identity) */}
-      <section className="w-full border-b border-ghost-light-border bg-neutral-50 dark:bg-ghost-dark-card/30 dark:border-ghost-dark-border">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-2 text-xs font-mono">
-          <div className="flex items-center space-x-2 text-ghost-light-sec dark:text-ghost-dark-sec text-[11px]">
-            <Sparkle className="h-3 w-3 text-zinc-400" />
+      <section className="w-full border-b border-zinc-200/50 dark:border-zinc-850/50 bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-2.5 text-xs font-mono">
+          <div className="flex items-center space-x-2 text-zinc-500 dark:text-zinc-400 text-[11px]">
+            <Sparkle className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400 animate-pulse-slow" />
             <span>Anonymous handle assigned:</span>
-            <span className="font-semibold text-neutral-800 dark:text-neutral-200 bg-neutral-150 dark:bg-neutral-900 px-1.5 py-0.5 rounded border border-ghost-light-border dark:border-ghost-dark-border">
+            <span className="font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 rounded-md border border-violet-100 dark:border-violet-900/30 shadow-sm">
               {nickname || 'Resolving...'}
             </span>
           </div>
 
           <button
             onClick={regenerateUserNickname}
-            className="flex items-center space-x-1.5 text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100 transition-colors px-2 py-1 rounded hover:bg-neutral-200/50 dark:hover:bg-neutral-800/30 cursor-pointer text-[10px]"
+            className="flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-250 transition-colors px-2.5 py-1 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-800/40 cursor-pointer text-[10px] font-medium"
             title="Generate a new random identity"
           >
-            <RefreshCw className="h-2.5 w-2.5" />
+            <RefreshCw className="h-3 w-3" />
             <span>Regenerate ID</span>
           </button>
         </div>
@@ -329,6 +331,9 @@ export default function Home() {
 
       {/* 3. Main Chat Scrollable Window Frame */}
       <main className="flex-1 overflow-hidden relative">
+        {/* Background Decorative Glows */}
+        <div className="absolute top-1/4 left-[5%] w-72 h-72 bg-violet-500/10 dark:bg-violet-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 right-[5%] w-96 h-96 bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
         
         {/* Connection Loader Skeleton Overlay */}
         <AnimatePresence>
@@ -442,8 +447,8 @@ export default function Home() {
           </div>
 
           {/* 4. Chat Input Box */}
-          <div className="border-t border-ghost-light-border dark:border-ghost-dark-border py-4 w-full">
-            <div className="relative flex flex-col p-2 bg-ghost-light-card border border-ghost-light-border dark:bg-ghost-dark-card dark:border-ghost-dark-border rounded-xl focus-within:ring-1 focus-within:ring-zinc-400 focus-within:border-zinc-400 dark:focus-within:ring-zinc-600 dark:focus-within:border-zinc-600 transition-all">
+          <div className="border-t border-zinc-200/85 dark:border-zinc-800/60 py-4 w-full bg-zinc-50/40 dark:bg-zinc-950/20 backdrop-blur-md">
+            <div className="relative flex flex-col p-2.5 bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800/90 rounded-2xl shadow-lg shadow-zinc-150/40 dark:shadow-black/45 focus-within:ring-2 focus-within:ring-indigo-500/35 focus-within:border-indigo-500 dark:focus-within:ring-indigo-500/25 dark:focus-within:border-indigo-500 transition-all">
               
               {/* Text area input for message writing */}
               <textarea
@@ -451,34 +456,34 @@ export default function Home() {
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={`Whisper to the void...`}
-                className="w-full resize-none bg-transparent px-3 py-2 text-sm text-ghost-light-text dark:text-ghost-dark-text outline-none focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-600 custom-scrollbar min-h-[44px] max-h-[120px]"
+                className="w-full resize-none bg-transparent px-3 py-2 text-sm text-zinc-850 dark:text-zinc-100 outline-none focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-500 custom-scrollbar min-h-[44px] max-h-[120px]"
                 rows={1}
                 disabled={!isConnected}
                 aria-label="Whisper editor input"
               />
 
               {/* Input Action Controls Footer Row */}
-              <div className="flex items-center justify-between border-t border-neutral-100 dark:border-zinc-800/80 pt-2 px-2 select-none">
+              <div className="flex items-center justify-between border-t border-zinc-100 dark:border-zinc-800/75 pt-2.5 px-2 select-none">
                 
                 {/* Character count scale */}
                 <span className={`font-mono text-[10px] ${
                   inputVal.length > 180 
                     ? 'text-yellow-500 font-bold' 
-                    : 'text-zinc-400 dark:text-zinc-600'
+                    : 'text-zinc-400 dark:text-zinc-500'
                 }`}>
                   {inputVal.length}/200
                 </span>
 
                 {/* Submitting controls */}
-                <div className="flex items-center space-x-2">
-                  <span className="hidden md:inline-block text-[9px] text-zinc-400 font-mono">
-                    Press <span className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-zinc-700 px-1 rounded">Enter</span> to send
+                <div className="flex items-center space-x-2.5">
+                  <span className="hidden md:inline-block text-[9px] text-zinc-400 dark:text-zinc-500 font-mono">
+                    Press <span className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1 rounded">Enter</span> to send
                   </span>
                   
                   <button
                     onClick={handleSend}
                     disabled={!isConnected || !inputVal.trim()}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-black hover:bg-zinc-800 disabled:bg-neutral-100 dark:bg-zinc-200 dark:hover:bg-white dark:disabled:bg-zinc-800/40 text-white dark:text-black disabled:text-neutral-400 dark:disabled:text-zinc-600 transition-colors shadow-sm cursor-pointer"
+                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-550 hover:to-indigo-550 disabled:from-zinc-100 disabled:to-zinc-100 dark:disabled:from-zinc-800/40 dark:disabled:to-zinc-800/40 text-white disabled:text-zinc-400 dark:disabled:text-zinc-600 transition-all shadow-md shadow-indigo-500/20 dark:shadow-none cursor-pointer"
                     aria-label="Send whisper message"
                   >
                     <Send className="h-3.5 w-3.5" />
