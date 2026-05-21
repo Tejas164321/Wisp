@@ -32,7 +32,9 @@ const SocketContext = createContext<SocketContextType | undefined>(undefined);
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [nickname, setNickname] = useState<string>('');
-  const [isConnected, setIsConnected] = useState(false);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [isPollingMode, setIsPollingMode] = useState(false);
+  const isConnected = isSocketConnected || isPollingMode;
   const [onlineCount, setOnlineCount] = useState(1);
   const [messages, setMessages] = useState<Message[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -85,21 +87,38 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const socketClient = io({
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: 3,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 20000,
+      timeout: 3000, // Short timeout for faster fallback to polling on Vercel
     });
 
+    let fallbackTimeout: NodeJS.Timeout;
+
+    // Fall back to polling mode if socket fails to connect in 2.5 seconds
+    fallbackTimeout = setTimeout(() => {
+      console.log('🔌 Socket connection timed out. Falling back to HTTP polling mode.');
+      setIsPollingMode(true);
+    }, 2500);
+
     socketClient.on('connect', () => {
-      setIsConnected(true);
+      clearTimeout(fallbackTimeout);
+      setIsSocketConnected(true);
+      setIsPollingMode(false);
       setError(null);
       console.log('🤖 Real-time chat connected to sanctuary.');
     });
 
     socketClient.on('disconnect', () => {
-      setIsConnected(false);
+      setIsSocketConnected(false);
       console.warn('⚠️ Disconnected from the sanctuary, seeking visual re-attachment...');
+      // Start polling fallback immediately on disconnect
+      setIsPollingMode(true);
+    });
+
+    socketClient.on('connect_error', () => {
+      clearTimeout(fallbackTimeout);
+      setIsPollingMode(true);
     });
 
     socketClient.on('history', (historyMessages: Message[]) => {
@@ -162,13 +181,82 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }, 0);
 
     return () => {
+      clearTimeout(fallbackTimeout);
       socketClient.disconnect();
     };
   }, [nickname]);
 
+  // 3. Polling loop fallback when Socket.io is unavailable (e.g. on Vercel serverless)
+  useEffect(() => {
+    if (!isPollingMode || !nickname) return;
+
+    const fetchPoll = async () => {
+      try {
+        const res = await fetch(`/api/messages?nickname=${encodeURIComponent(nickname)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages) {
+            setMessages(data.messages);
+          }
+          if (typeof data.onlineCount === 'number') {
+            setOnlineCount(data.onlineCount);
+          }
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    };
+
+    fetchPoll();
+
+    const interval = setInterval(fetchPoll, 3000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isPollingMode, nickname]);
+
   // Actions
-  const sendMessage = (text: string) => {
-    if (socket && isConnected) {
+  const sendMessage = async (text: string) => {
+    if (isPollingMode) {
+      try {
+        const res = await fetch('/api/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ nickname, text }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          setError(data.error || 'A spatial anomaly occurred. Whisper failed.');
+          return;
+        }
+
+        const data = await res.json();
+        if (data.success && data.message) {
+          if (soundEnabledRef.current && audioRef.current) {
+            audioRef.current.playSendSound();
+          }
+          if (audioRef.current) {
+            audioRef.current.triggerHaptic('success');
+          }
+
+          // Append locally immediately for responsiveness
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === data.message.id)) return prev;
+            return [...prev, data.message];
+          });
+        }
+      } catch (err) {
+        console.error('Failed to send message in polling mode:', err);
+        setError('Connection interrupted. Unable to reach a spatial gateway.');
+      }
+      return;
+    }
+
+    if (socket && isSocketConnected) {
       socket.emit('message', { nickname, text });
       
       // Trigger soft send chime + subtle haptic vibration
@@ -187,7 +275,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   };
 
   const sendTypingStatus = (isTyping: boolean) => {
-    if (!socket || !isConnected) return;
+    if (isPollingMode) return; // Typing status not supported/needed in polling mode
+    if (!socket || !isSocketConnected) return;
 
     // Guard to avoid spamming typing events unnecessarily
     if (isCurrentlyTypingRef.current === isTyping) return;
@@ -225,7 +314,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Notify server of typing state swap (clearing typing reference)
-    if (socket && isConnected) {
+    if (socket && isSocketConnected) {
       socket.emit('stop_typing', { nickname: oldNickname });
     }
     
