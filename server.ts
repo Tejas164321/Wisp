@@ -4,6 +4,7 @@ import next from 'next';
 import { Server } from 'socket.io';
 import { saveMessage, fetchMessageHistory, Message } from './lib/redis';
 import { sanitizeMessage, filterBadWords, isSpam } from './lib/chat-utils';
+import { sendPushNotifications } from './lib/push';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || '0.0.0.0';
@@ -61,9 +62,9 @@ app.prepare().then(() => {
     }
 
     // 2. Handle incoming chat messages
-    socket.on('message', async (data: { nickname: string; text: string; replyToId?: string; replyToNickname?: string; replyToText?: string }) => {
+    socket.on('message', async (data: { nickname: string; text: string; clientId?: string; replyToId?: string; replyToNickname?: string; replyToText?: string }) => {
       try {
-        const { nickname, text } = data;
+        const { nickname, text, clientId } = data;
         const socketId = socket.id;
         const now = Date.now();
 
@@ -108,6 +109,9 @@ app.prepare().then(() => {
 
         // Broadcast to everyone
         io.emit('message', newMsg);
+        
+        // Trigger push notifications
+        sendPushNotifications(newMsg, clientId).catch(err => console.error('Push notification error:', err));
 
         // Remove from typing status if they successfully posted
         socket.broadcast.emit('stop_typing', { nickname: nickname });

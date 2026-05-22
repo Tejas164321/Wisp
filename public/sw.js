@@ -31,6 +31,63 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// ─── Push Notifications ────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  try {
+    const data = event.data.json();
+    
+    // Show notification only if the client isn't actively looking at the page
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+        let isFocused = false;
+        for (let i = 0; i < windowClients.length; i++) {
+          const windowClient = windowClients[i];
+          if (windowClient.focused) {
+            isFocused = true;
+            break;
+          }
+        }
+
+        // Only show notification if the app is NOT focused (user is away)
+        if (!isFocused) {
+          return self.registration.showNotification(data.title || 'Wisp', {
+            body: data.body || 'New whisper',
+            icon: data.icon || '/icon-192.png',
+            badge: '/favicon-32x32.png',
+            vibrate: [200, 100, 200],
+            data: { url: data.url || '/' },
+          });
+        }
+      })
+    );
+  } catch (err) {
+    console.error('Error handling push event:', err);
+  }
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Check if there is already a window/tab open with the target URL
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        // If so, just focus it.
+        if (client.url.includes(event.notification.data.url) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // If not, then open the target URL in a new window/tab.
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(event.notification.data.url);
+      }
+    })
+  );
+});
+
 // ─── Fetch strategy ────────────────────────────────────────────────────────
 // API / WebSocket calls: always network-only (never cache real-time data)
 // Static assets (icons, fonts, CSS, JS): stale-while-revalidate

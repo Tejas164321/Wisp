@@ -4,6 +4,8 @@ let redisClient: Redis | null = null;
 
 // Simple in-memory fallback cache that expires objects based on timestamps.
 let memoryMessages: any[] = [];
+// In-memory push subscriptions fallback
+const memorySubscriptions: Record<string, any> = {};
 
 /**
  * Lazy initializer for the Redis client.
@@ -153,4 +155,62 @@ function cleanupMemory(): void {
   if (memoryMessages.length > 200) {
     memoryMessages = memoryMessages.slice(memoryMessages.length - 200);
   }
+}
+
+// Push subscription managers
+
+export async function savePushSubscription(clientId: string, subscription: any): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.hset('ghostroom:push_subs', { [clientId]: JSON.stringify(subscription) });
+    } catch (err) {
+      console.error('Failed to save push subscription to Redis:', err);
+      memorySubscriptions[clientId] = subscription;
+    }
+  } else {
+    memorySubscriptions[clientId] = subscription;
+  }
+}
+
+export async function removePushSubscription(clientId: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.hdel('ghostroom:push_subs', clientId);
+    } catch (err) {
+      console.error('Failed to remove push subscription from Redis:', err);
+      delete memorySubscriptions[clientId];
+    }
+  } else {
+    delete memorySubscriptions[clientId];
+  }
+}
+
+export async function getAllPushSubscriptions(): Promise<{ clientId: string; subscription: any }[]> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const subs = await redis.hgetall('ghostroom:push_subs');
+      if (!subs) return [];
+      
+      const parsedSubs: { clientId: string; subscription: any }[] = [];
+      for (const [clientId, subStr] of Object.entries(subs)) {
+        try {
+          // Upstash redis client might automatically parse JSON objects depending on configuration.
+          // Handle both string and object.
+          const sub = typeof subStr === 'string' ? JSON.parse(subStr) : subStr;
+          parsedSubs.push({ clientId, subscription: sub });
+        } catch (e) {
+          console.error(`Failed to parse subscription for ${clientId}`);
+        }
+      }
+      return parsedSubs;
+    } catch (err) {
+      console.error('Failed to get push subscriptions from Redis:', err);
+      return Object.entries(memorySubscriptions).map(([clientId, sub]) => ({ clientId, subscription: sub }));
+    }
+  }
+  
+  return Object.entries(memorySubscriptions).map(([clientId, sub]) => ({ clientId, subscription: sub }));
 }

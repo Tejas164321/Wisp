@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useSocketState } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 interface MessageBubbleProps {
   line: {
@@ -244,6 +245,7 @@ export default function Home() {
   } = useSocketState();
 
   const { theme, toggleTheme } = useTheme();
+  const { isSupported: isPushSupported, subscription: pushSubscription, permission, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const [replyTo, setReplyTo] = useState<{ id: string; nickname: string; text: string } | null>(null);
 
   const [inputVal, setInputVal] = useState('');
@@ -357,6 +359,10 @@ export default function Home() {
   const dismissWelcome = () => {
     localStorage.setItem('wisp_welcome_dismissed', 'true');
     setShowWelcome(false);
+    // Seamlessly prompt for push notifications on first real interaction
+    if (isPushSupported && !pushSubscription && permission === 'default') {
+      subscribePush();
+    }
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -485,6 +491,11 @@ export default function Home() {
     
     // Set 5-second rate limit cooldown to prevent spamming
     setCooldownLeft(5);
+
+    // Prompt for push notifications if they haven't been asked yet
+    if (isPushSupported && !pushSubscription && permission === 'default') {
+      subscribePush();
+    }
 
     // Re-focus textarea to guarantee keyboard stays open on all mobile devices
     setTimeout(() => {

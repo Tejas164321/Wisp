@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchMessageHistory, saveMessage, Message, getRedis } from '@/lib/redis';
 import { sanitizeMessage, filterBadWords, isSpam } from '@/lib/chat-utils';
+import { sendPushNotifications } from '@/lib/push';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -91,6 +92,9 @@ export async function POST(request: Request) {
         await redis.set(`ghostroom:presence:${presenceId}`, '1', { ex: 15 });
       }
     }
+
+    // Trigger push notifications
+    sendPushNotifications(newMsg, clientId).catch(err => console.error('Push notification error:', err));
 
     return NextResponse.json({ success: true, message: newMsg });
   } catch (err) {

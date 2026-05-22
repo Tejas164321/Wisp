@@ -166,7 +166,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
             }
           }
           if (audioRef.current) {
-            audioRef.current.triggerHaptic('light');
+            audioRef.current.triggerHaptic('success');
           }
         }
 
@@ -238,6 +238,24 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
                 return !isConfirmed;
               });
               
+              // Check for new incoming messages from other users to trigger audio/haptics
+              const newIncoming = data.messages.filter((m: Message) => 
+                !prev.some((p) => p.id === m.id) && m.nickname !== nicknameRef.current
+              );
+
+              if (newIncoming.length > 0) {
+                if (soundEnabledRef.current && audioRef.current) {
+                  if (isScrolledUpRef.current) {
+                    audioRef.current.playUnreadReceiveSound();
+                  } else {
+                    audioRef.current.playReceiveSound();
+                  }
+                }
+                if (audioRef.current) {
+                  audioRef.current.triggerHaptic('success');
+                }
+              }
+
               // Merge server messages with pending optimistic ones
               return [...data.messages, ...pendingOptimistics];
             });
@@ -329,6 +347,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socket.emit('message', { 
         nickname, 
         text,
+        clientId,
         replyToId: replyTo?.id,
         replyToNickname: replyTo?.nickname,
         replyToText: replyTo?.text,
