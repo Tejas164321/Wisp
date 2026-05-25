@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -17,18 +17,16 @@ export function usePushNotifications() {
   const [isSupported, setIsSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [permission, setPermission] = useState<NotificationPermission>('default');
+  const hasInitializedRef = useRef(false);
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setIsSupported(true);
+    if (typeof window === 'undefined') return;
+
+    const supported = 'serviceWorker' in navigator && 'PushManager' in window;
+    Promise.resolve().then(() => {
+      setIsSupported(supported);
       setPermission(Notification.permission);
-      
-      navigator.serviceWorker.ready.then((registration) => {
-        registration.pushManager.getSubscription().then((sub) => {
-          setSubscription(sub);
-        });
-      });
-    }
+    });
   }, []);
 
   const getClientId = () => {
@@ -36,43 +34,59 @@ export function usePushNotifications() {
     return localStorage.getItem('ghostroom_client_id');
   };
 
-  const subscribe = async () => {
-    if (!isSupported) return false;
-    
-    const permissionResult = await Notification.requestPermission();
-    setPermission(permissionResult);
-    
-    if (permissionResult !== 'granted') {
-      return false;
+  const syncSubscriptionToServer = useCallback(async (sub: PushSubscription) => {
+    const clientId = getClientId();
+    if (!clientId) return;
+
+    await fetch('/api/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, subscription: sub }),
+    });
+  }, []);
+
+  const createSubscription = useCallback(async (shouldRequestPermission: boolean) => {
+    if (!isSupported) return null;
+
+    let finalPermission = Notification.permission;
+    if (shouldRequestPermission) {
+      finalPermission = await Notification.requestPermission();
+      setPermission(finalPermission);
     }
 
+    if (finalPermission !== 'granted') {
+      return null;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const existingSub = await registration.pushManager.getSubscription();
+    if (existingSub) {
+      setSubscription(existingSub);
+      await syncSubscriptionToServer(existingSub);
+      return existingSub;
+    }
+
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+    if (!vapidPublicKey) {
+      console.error('Missing VAPID public key');
+      return null;
+    }
+
+    const sub = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    });
+
+    setSubscription(sub);
+    await syncSubscriptionToServer(sub);
+    return sub;
+  }, [isSupported, syncSubscriptionToServer]);
+
+  const subscribe = async () => {
     try {
-      const registration = await navigator.serviceWorker.ready;
-      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      
-      if (!vapidPublicKey) {
-        console.error('Missing VAPID public key');
-        return false;
-      }
-
-      const sub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
-
-      setSubscription(sub);
-      
-      // Save subscription to server
-      const clientId = getClientId();
-      if (clientId) {
-        await fetch('/api/push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clientId, subscription: sub }),
-        });
-      }
-      
-      return true;
+      const sub = await createSubscription(true);
+      return !!sub;
     } catch (err) {
       console.error('Failed to subscribe to push notifications:', err);
       return false;
@@ -99,6 +113,28 @@ export function usePushNotifications() {
       return false;
     }
   };
+
+  useEffect(() => {
+    if (!isSupported || hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
+    navigator.serviceWorker.ready
+      .then(async (registration) => {
+        const existingSub = await registration.pushManager.getSubscription();
+        if (existingSub) {
+          setSubscription(existingSub);
+          await syncSubscriptionToServer(existingSub);
+          return;
+        }
+
+        if (Notification.permission === 'granted') {
+          await createSubscription(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to initialize push subscription:', err);
+      });
+  }, [isSupported, createSubscription, syncSubscriptionToServer]);
 
   return {
     isSupported,
