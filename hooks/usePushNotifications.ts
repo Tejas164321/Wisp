@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -21,6 +21,7 @@ export function usePushNotifications() {
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof window !== 'undefined' ? Notification.permission : 'default'
   );
+  const hasInitializedRef = useRef(false);
 
   const getClientId = () => {
     if (typeof window === 'undefined') return null;
@@ -108,7 +109,8 @@ export function usePushNotifications() {
   };
 
   useEffect(() => {
-    if (!isSupported) return;
+    if (!isSupported || hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
 
     navigator.serviceWorker.ready
       .then(async (registration) => {

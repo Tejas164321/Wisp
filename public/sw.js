@@ -33,6 +33,7 @@ self.addEventListener('activate', (event) => {
 
 // ─── Push Notifications ────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
+  let usedFallbackPayload = false;
   let data = {
     title: 'Wisp',
     body: 'New whisper',
@@ -50,11 +51,16 @@ self.addEventListener('push', (event) => {
         url: json.url || data.url,
       };
     } catch {
+      usedFallbackPayload = true;
       const textBody = event.data.text();
       if (textBody) {
         data.body = textBody;
       }
     }
+  }
+
+  if (usedFallbackPayload) {
+    data.title = 'New notification';
   }
 
   // Show notification only if the client isn't actively looking at the page
