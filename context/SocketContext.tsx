@@ -3,15 +3,14 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { generateNickname } from '@/lib/nickname';
+import type { MemeAudio, Message, MessageType } from '@/lib/message-types';
 
-export interface Message {
-  id: string;
-  nickname: string;
-  text: string;
-  createdAt: number;
-  replyToId?: string;
-  replyToNickname?: string;
-  replyToText?: string;
+export type { Message } from '@/lib/message-types';
+
+export interface SendMessagePayload {
+  type?: MessageType;
+  text?: string;
+  memeAudio?: MemeAudio;
 }
 
 interface SocketContextType {
@@ -21,7 +20,7 @@ interface SocketContextType {
   onlineCount: number;
   messages: Message[];
   typingUsers: string[];
-  sendMessage: (text: string, replyTo?: { id: string; nickname: string; text: string }) => void;
+  sendMessage: (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => void;
   sendTypingStatus: (isTyping: boolean) => void;
   error: string | null;
   clearError: () => void;
@@ -279,17 +278,26 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, [isPollingMode, nickname, clientId]);
 
   // Actions
-  const sendMessage = async (text: string, replyTo?: { id: string; nickname: string; text: string }) => {
+  const sendMessage = async (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => {
+    const messageType: MessageType = payload.type || (payload.memeAudio ? 'meme_audio' : 'text');
+    const outgoingText =
+      payload.text || payload.memeAudio?.title || (messageType === 'meme_audio' ? 'Meme sound' : '');
+    if (messageType === 'text' && !outgoingText.trim()) {
+      setError('Cannot whisper empty voids.');
+      return;
+    }
     if (isPollingMode) {
       const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const optimisticMessage: Message = {
         id: tempId,
         nickname,
-        text,
+        text: outgoingText,
         createdAt: Date.now(),
         replyToId: replyTo?.id,
         replyToNickname: replyTo?.nickname,
         replyToText: replyTo?.text,
+        type: messageType,
+        memeAudio: payload.memeAudio,
       };
 
       // Play sound + haptic immediately for responsive feedback
@@ -311,7 +319,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           },
           body: JSON.stringify({ 
             nickname, 
-            text, 
+            text: outgoingText,
+            type: messageType,
+            memeAudio: payload.memeAudio,
             clientId,
             replyToId: replyTo?.id,
             replyToNickname: replyTo?.nickname,
@@ -346,7 +356,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     if (socket && isSocketConnected) {
       socket.emit('message', { 
         nickname, 
-        text,
+        text: outgoingText,
+        type: messageType,
+        memeAudio: payload.memeAudio,
         clientId,
         replyToId: replyTo?.id,
         replyToNickname: replyTo?.nickname,

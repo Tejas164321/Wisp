@@ -11,20 +11,23 @@ import {
   Wifi, 
   WifiOff, 
   Sparkle,
-  Calendar,
   Clock,
-  MessageSquare,
   AlertCircle,
   Volume2,
   VolumeX,
   ArrowDown,
   CornerUpLeft,
   X,
-  Download
+  Download,
+  Search,
+  ExternalLink,
+  AudioLines
 } from 'lucide-react';
 import { useSocketState } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import type { MemeAudio, Message } from '@/lib/message-types';
+import { getMemeAudioPreviewLabel } from '@/lib/meme-utils';
 
 interface MessageBubbleProps {
   line: {
@@ -34,6 +37,8 @@ interface MessageBubbleProps {
     replyToId?: string;
     replyToNickname?: string;
     replyToText?: string;
+    type?: Message['type'];
+    memeAudio?: MemeAudio;
   };
   groupNickname: string;
   isSelf: boolean;
@@ -58,9 +63,15 @@ function MessageBubble({
 
   const [scaleState, setScaleState] = useState(1);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const isMemeAudio = line.type === 'meme_audio' && line.memeAudio;
+  const messagePreview = isMemeAudio ? getMemeAudioPreviewLabel(line.memeAudio) : (line.text || '');
+  const providerLabel = line.memeAudio?.provider === 'myinstants' ? 'MyInstants' : line.memeAudio?.provider;
+  const memeAudioSource = isMemeAudio
+    ? `/api/memes/stream?url=${encodeURIComponent(line.memeAudio?.previewUrl || line.memeAudio?.sourceUrl || '')}`
+    : '';
 
   const triggerReply = () => {
-    onReply({ id: line.id, nickname: groupNickname, text: line.text });
+    onReply({ id: line.id, nickname: groupNickname, text: messagePreview });
     // Play bounce scale animation
     setScaleState(1.06);
     setTimeout(() => setScaleState(1), 150);
@@ -124,7 +135,7 @@ function MessageBubble({
 
   const borderStyles = isSelf 
     ? 'bg-violet-50/80 dark:bg-violet-500/10 border border-violet-200/60 dark:border-violet-500/30 text-violet-900 dark:text-violet-200 rounded-2xl rounded-tr-sm shadow-sm' 
-    : 'bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 text-zinc-850 dark:text-zinc-100 rounded-2xl rounded-tl-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_16px_-4px_rgba(0,0,0,0.4)]';
+    : 'bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 text-zinc-900 dark:text-zinc-100 rounded-2xl rounded-tl-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_16px_-4px_rgba(0,0,0,0.4)]';
 
   return (
     <div className="relative group/bubble flex items-center w-full my-0.5">
@@ -198,7 +209,42 @@ function MessageBubble({
           </div>
         )}
 
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{line.text}</p>
+        {isMemeAudio ? (
+          <div className="flex flex-col gap-2 min-w-[220px]">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100/70 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300">
+                <AudioLines className="h-4 w-4" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                  {line.memeAudio?.title}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
+                  {providerLabel}
+                </span>
+              </div>
+              {line.memeAudio?.pageUrl && (
+                <a
+                  href={line.memeAudio.pageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-zinc-200/70 dark:border-zinc-700/70 text-zinc-400 hover:text-violet-500 hover:border-violet-300 dark:hover:border-violet-600 transition-colors"
+                  title="Open source"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+            <audio
+              controls
+              preload="none"
+              className="w-full h-9 rounded-lg"
+              src={memeAudioSource}
+            />
+          </div>
+        ) : (
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{line.text}</p>
+        )}
         
         {/* Hover visual timestamp */}
         {index > 0 && (
@@ -249,6 +295,11 @@ export default function Home() {
   const [replyTo, setReplyTo] = useState<{ id: string; nickname: string; text: string } | null>(null);
 
   const [inputVal, setInputVal] = useState('');
+  const [composerMode, setComposerMode] = useState<'text' | 'meme'>('text');
+  const [memeQuery, setMemeQuery] = useState('');
+  const [memeResults, setMemeResults] = useState<MemeAudio[]>([]);
+  const [memeLoading, setMemeLoading] = useState(false);
+  const [memeError, setMemeError] = useState<string | null>(null);
   const [isTypingLocal, setIsTypingLocal] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [cooldownLeft, setCooldownLeft] = useState(0);
@@ -482,7 +533,7 @@ export default function Home() {
     const cleanMsg = inputVal.trim();
     if (!cleanMsg) return;
 
-    sendMessage(cleanMsg, replyTo || undefined);
+    sendMessage({ type: 'text', text: cleanMsg }, replyTo || undefined);
     setReplyTo(null);
     setInputVal('');
     setIsTypingLocal(false);
@@ -498,6 +549,58 @@ export default function Home() {
     }
 
     // Re-focus textarea to guarantee keyboard stays open on all mobile devices
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
+  };
+
+  const handleMemeSearch = async () => {
+    const searchTerm = memeQuery.trim();
+    if (!searchTerm) {
+      setMemeError('Type a search term to find sounds.');
+      setMemeResults([]);
+      return;
+    }
+
+    setMemeLoading(true);
+    setMemeError(null);
+
+    try {
+      const res = await fetch(`/api/memes?q=${encodeURIComponent(searchTerm)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setMemeError(data.error || 'Meme search failed.');
+        setMemeResults([]);
+        return;
+      }
+      setMemeResults(data.results || []);
+      if (!data.results || data.results.length === 0) {
+        setMemeError('No meme sounds found.');
+      }
+    } catch (err) {
+      setMemeError('Meme search failed.');
+      setMemeResults([]);
+    } finally {
+      setMemeLoading(false);
+    }
+  };
+
+  const handleSendMeme = (memeAudio: MemeAudio) => {
+    if (!isConnected || cooldownLeft > 0) return;
+
+    sendMessage({ type: 'meme_audio', text: memeAudio.title, memeAudio }, replyTo || undefined);
+    setReplyTo(null);
+    setComposerMode('text');
+    setMemeQuery('');
+    setMemeResults([]);
+    setMemeError(null);
+
+    setCooldownLeft(5);
+
+    if (isPushSupported && !pushSubscription && permission === 'default') {
+      subscribePush();
+    }
+
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 0);
@@ -535,6 +638,8 @@ export default function Home() {
           replyToId: msg.replyToId,
           replyToNickname: msg.replyToNickname,
           replyToText: msg.replyToText,
+          type: msg.type,
+          memeAudio: msg.memeAudio,
         });
       } else {
         if (currentGroup) {
@@ -551,6 +656,8 @@ export default function Home() {
             replyToId: msg.replyToId,
             replyToNickname: msg.replyToNickname,
             replyToText: msg.replyToText,
+            type: msg.type,
+            memeAudio: msg.memeAudio,
           }]
         };
       }
@@ -883,6 +990,132 @@ export default function Home() {
               )}
             </AnimatePresence>
 
+            {/* Meme sounds panel */}
+            <AnimatePresence>
+              {composerMode === 'meme' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+                  className="mb-3"
+                >
+                  <div className="rounded-2xl border border-zinc-200/70 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-900/80 backdrop-blur-md p-3 shadow-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1 rounded-full bg-zinc-100/70 dark:bg-zinc-800/70 p-1">
+                        <button
+                          onClick={() => setComposerMode('text')}
+                          className="px-3 py-1 text-[11px] font-semibold rounded-full text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+                        >
+                          Text
+                        </button>
+                        <button
+                          onClick={() => setComposerMode('meme')}
+                          className="px-3 py-1 text-[11px] font-semibold rounded-full bg-violet-600 text-white shadow-sm"
+                        >
+                          Meme Sounds
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setComposerMode('text')}
+                        className="h-7 w-7 rounded-full border border-zinc-200/70 dark:border-zinc-700/70 flex items-center justify-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                        aria-label="Close meme panel"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 flex items-center gap-2 rounded-full border border-zinc-200/70 dark:border-zinc-700/70 bg-white dark:bg-zinc-950/40 px-3 py-1.5">
+                        <Search className="h-3.5 w-3.5 text-zinc-400" />
+                        <input
+                          value={memeQuery}
+                          onChange={(e) => setMemeQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleMemeSearch();
+                            }
+                          }}
+                          placeholder="Search meme sounds (MyInstants)"
+                          className="flex-1 bg-transparent text-xs text-zinc-700 dark:text-zinc-200 outline-none placeholder:text-zinc-400"
+                          aria-label="Search meme sounds"
+                        />
+                      </div>
+                      <button
+                        onClick={handleMemeSearch}
+                        disabled={memeLoading || memeQuery.trim().length < 2}
+                        className="px-3 py-1.5 text-[11px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 disabled:bg-zinc-200 dark:disabled:bg-zinc-800 text-white disabled:text-zinc-400 transition-colors"
+                      >
+                        {memeLoading ? 'Searching...' : 'Search'}
+                      </button>
+                    </div>
+
+                    {memeError && (
+                      <div className="mt-2 text-[11px] text-red-500 font-medium">
+                        {memeError}
+                      </div>
+                    )}
+
+                    <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
+                      {memeResults.map((result) => {
+                        const audioSource = `/api/memes/stream?url=${encodeURIComponent(result.previewUrl || result.sourceUrl)}`;
+                        const resultProvider = result.provider === 'myinstants' ? 'MyInstants' : result.provider;
+                        return (
+                          <div
+                            key={result.id}
+                            className="rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 bg-zinc-50/80 dark:bg-zinc-950/40 p-3 flex flex-col gap-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="h-8 w-8 rounded-xl bg-violet-100/70 dark:bg-violet-900/40 flex items-center justify-center text-violet-600 dark:text-violet-300">
+                                  <AudioLines className="h-4 w-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                                    {result.title}
+                                  </p>
+                                  <p className="text-[9px] font-mono text-zinc-400 uppercase tracking-wide">
+                                    {resultProvider}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {result.pageUrl && (
+                                  <a
+                                    href={result.pageUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="h-7 w-7 rounded-full border border-zinc-200/70 dark:border-zinc-700/70 flex items-center justify-center text-zinc-400 hover:text-violet-500 transition-colors"
+                                    title="Open source"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => handleSendMeme(result)}
+                                  disabled={!isConnected || cooldownLeft > 0}
+                                  className="px-3 py-1 text-[10px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 disabled:bg-zinc-200 dark:disabled:bg-zinc-800 text-white disabled:text-zinc-400 transition-colors"
+                                >
+                                  Send
+                                </button>
+                              </div>
+                            </div>
+                            <audio controls preload="none" className="w-full h-9 rounded-lg" src={audioSource} />
+                          </div>
+                        );
+                      })}
+
+                      {!memeLoading && memeResults.length === 0 && !memeError && (
+                        <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                          Search for meme sounds and share them instantly.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Reply strip — minimal pill above input */}
             <AnimatePresence>
@@ -910,7 +1143,7 @@ export default function Home() {
             </AnimatePresence>
 
             {/* Chat Input Box */}
-            <div className={`relative flex items-center gap-2 pl-5 pr-1.5 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-full shadow-lg focus-within:ring-2 focus-within:ring-violet-500/20 focus-within:border-violet-500 dark:focus-within:ring-violet-500/20 dark:focus-within:border-violet-500 transition-all ${
+            <div className={`relative flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-full shadow-lg focus-within:ring-2 focus-within:ring-violet-500/20 focus-within:border-violet-500 dark:focus-within:ring-violet-500/20 dark:focus-within:border-violet-500 transition-all ${
               cooldownLeft > 0 ? 'opacity-85 select-none bg-neutral-50/50 dark:bg-zinc-950/20' : ''
             }`}>
               
@@ -926,6 +1159,19 @@ export default function Home() {
                 )}
               </div>
 
+              {/* Meme toggle */}
+              <button
+                onClick={() => setComposerMode((prev) => (prev === 'meme' ? 'text' : 'meme'))}
+                className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors shadow-sm ${
+                  composerMode === 'meme'
+                    ? 'border-violet-300 bg-violet-50 text-violet-600 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
+                    : 'border-zinc-200 bg-white text-zinc-500 hover:text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400'
+                }`}
+                aria-label="Toggle meme sounds"
+              >
+                <AudioLines className="h-4 w-4" />
+              </button>
+
               {/* Text area input for message writing */}
               <textarea
                 ref={textareaRef}
@@ -936,7 +1182,7 @@ export default function Home() {
                 className={`flex-1 resize-none bg-transparent pl-0 pr-1 py-1 text-sm outline-none focus:outline-none custom-scrollbar min-h-[24px] max-h-[80px] transition-all ${
                   cooldownLeft > 0 
                   ? 'text-zinc-400 dark:text-zinc-500 placeholder-zinc-450 dark:placeholder-zinc-650 cursor-not-allowed' 
-                  : 'text-zinc-850 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500'
+                  : 'text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500'
                 }`}
                 rows={1}
                 disabled={!isConnected}

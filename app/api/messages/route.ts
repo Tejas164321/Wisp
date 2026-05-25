@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { fetchMessageHistory, saveMessage, Message, getRedis } from '@/lib/redis';
+import { fetchMessageHistory, saveMessage, getRedis } from '@/lib/redis';
+import type { Message, MessageType } from '@/lib/message-types';
 import { sanitizeMessage, filterBadWords, isSpam } from '@/lib/chat-utils';
+import { sanitizeMemeAudioPayload, sanitizeMemeTitle } from '@/lib/meme-utils';
 import { sendPushNotifications } from '@/lib/push';
 
 export async function GET(request: Request) {
@@ -39,8 +41,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { nickname, text, clientId, replyToId, replyToNickname, replyToText } = body;
+    const { nickname, text, clientId, replyToId, replyToNickname, replyToText, type, memeAudio } = body;
     const now = Date.now();
+    const messageType: MessageType = type === 'meme_audio' ? 'meme_audio' : 'text';
 
     const redis = getRedis();
 
@@ -58,19 +61,40 @@ export async function POST(request: Request) {
       await redis.set(rateLimitKey, '1', { ex: 5 });
     }
 
-    // 2. Sanitize input
-    const sanitizedText = sanitizeMessage(text);
-    if (!sanitizedText || sanitizedText.length === 0) {
-      return NextResponse.json({ error: 'Cannot whisper empty voids.' }, { status: 400 });
-    }
+    let processedText = '';
+    let processedMemeAudio = undefined;
 
-    // 3. Spam detection
-    if (isSpam(sanitizedText, nickname)) {
-      return NextResponse.json({ error: 'Message caught by anti-spam filtration.' }, { status: 400 });
-    }
+    if (messageType === 'text') {
+      // 2. Sanitize input
+      const sanitizedText = sanitizeMessage(text);
+      if (!sanitizedText || sanitizedText.length === 0) {
+        return NextResponse.json({ error: 'Cannot whisper empty voids.' }, { status: 400 });
+      }
 
-    // 4. Profanity filtering
-    const processedText = filterBadWords(sanitizedText);
+      // 3. Spam detection
+      if (isSpam(sanitizedText, nickname)) {
+        return NextResponse.json({ error: 'Message caught by anti-spam filtration.' }, { status: 400 });
+      }
+
+      // 4. Profanity filtering
+      processedText = filterBadWords(sanitizedText);
+    } else {
+      const sanitizedAudio = sanitizeMemeAudioPayload(memeAudio);
+      if (!sanitizedAudio) {
+        return NextResponse.json({ error: 'Unsupported meme audio payload.' }, { status: 400 });
+      }
+
+      const safeTitle = filterBadWords(sanitizeMemeTitle(sanitizedAudio.title));
+      if (!safeTitle) {
+        return NextResponse.json({ error: 'Meme audio title missing.' }, { status: 400 });
+      }
+      if (isSpam(safeTitle, nickname)) {
+        return NextResponse.json({ error: 'Message caught by anti-spam filtration.' }, { status: 400 });
+      }
+
+      processedMemeAudio = { ...sanitizedAudio, title: safeTitle };
+      processedText = safeTitle;
+    }
 
     const newMsg: Message = {
       id: Math.random().toString(36).substring(2, 15) + Date.now().toString(36),
@@ -80,6 +104,8 @@ export async function POST(request: Request) {
       replyToId,
       replyToNickname,
       replyToText,
+      type: messageType,
+      memeAudio: processedMemeAudio,
     };
 
     // 5. Save message

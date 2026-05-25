@@ -2,8 +2,10 @@ import { createServer } from 'node:http';
 import { parse } from 'node:url';
 import next from 'next';
 import { Server } from 'socket.io';
-import { saveMessage, fetchMessageHistory, Message } from './lib/redis';
+import { saveMessage, fetchMessageHistory } from './lib/redis';
+import type { MemeAudio, Message, MessageType } from './lib/message-types';
 import { sanitizeMessage, filterBadWords, isSpam } from './lib/chat-utils';
+import { sanitizeMemeAudioPayload, sanitizeMemeTitle } from './lib/meme-utils';
 import { sendPushNotifications } from './lib/push';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -62,11 +64,12 @@ app.prepare().then(() => {
     }
 
     // 2. Handle incoming chat messages
-    socket.on('message', async (data: { nickname: string; text: string; clientId?: string; replyToId?: string; replyToNickname?: string; replyToText?: string }) => {
+    socket.on('message', async (data: { nickname: string; text?: string; type?: MessageType; memeAudio?: Partial<MemeAudio>; clientId?: string; replyToId?: string; replyToNickname?: string; replyToText?: string }) => {
       try {
-        const { nickname, text, clientId } = data;
+        const { nickname, text, clientId, type, memeAudio } = data;
         const socketId = socket.id;
         const now = Date.now();
+        const messageType: MessageType = type === 'meme_audio' ? 'meme_audio' : 'text';
 
         // Check Rate-limiting (max 1 message every 5 seconds)
         const lastMsgTime = rateLimitMap.get(socketId) || 0;
@@ -78,21 +81,45 @@ app.prepare().then(() => {
         // Update last message time stamp immediately
         rateLimitMap.set(socketId, now);
 
-        // Sanitize input
-        const sanitizedText = sanitizeMessage(text);
-        if (!sanitizedText || sanitizedText.length === 0) {
-          socket.emit('error', 'Cannot whisper empty voids.');
-          return;
-        }
+        let processedText = '';
+        let processedMemeAudio = undefined;
 
-        // Basic spam detection
-        if (isSpam(sanitizedText, nickname)) {
-          socket.emit('error', 'Message caught by anti-spam filtration.');
-          return;
-        }
+        if (messageType === 'text') {
+          // Sanitize input
+          const sanitizedText = sanitizeMessage(text || '');
+          if (!sanitizedText || sanitizedText.length === 0) {
+            socket.emit('error', 'Cannot whisper empty voids.');
+            return;
+          }
 
-        // Profanity filtering
-        const processedText = filterBadWords(sanitizedText);
+          // Basic spam detection
+          if (isSpam(sanitizedText, nickname)) {
+            socket.emit('error', 'Message caught by anti-spam filtration.');
+            return;
+          }
+
+          // Profanity filtering
+          processedText = filterBadWords(sanitizedText);
+        } else {
+          const sanitizedAudio = sanitizeMemeAudioPayload(memeAudio);
+          if (!sanitizedAudio) {
+            socket.emit('error', 'Unsupported meme audio payload.');
+            return;
+          }
+
+          const safeTitle = filterBadWords(sanitizeMemeTitle(sanitizedAudio.title));
+          if (!safeTitle) {
+            socket.emit('error', 'Meme audio title missing.');
+            return;
+          }
+          if (isSpam(safeTitle, nickname)) {
+            socket.emit('error', 'Message caught by anti-spam filtration.');
+            return;
+          }
+
+          processedMemeAudio = { ...sanitizedAudio, title: safeTitle };
+          processedText = safeTitle;
+        }
 
         const newMsg: Message = {
           id: Math.random().toString(36).substring(2, 15) + Date.now().toString(36),
@@ -102,6 +129,8 @@ app.prepare().then(() => {
           replyToId: data.replyToId,
           replyToNickname: data.replyToNickname,
           replyToText: data.replyToText,
+          type: messageType,
+          memeAudio: processedMemeAudio,
         };
 
         // Save message (automatically expires in 3 hours under Redis or memory)

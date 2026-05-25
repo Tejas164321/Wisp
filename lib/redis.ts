@@ -1,9 +1,10 @@
 import { Redis } from '@upstash/redis';
+import type { Message } from './message-types';
 
 let redisClient: Redis | null = null;
 
 // Simple in-memory fallback cache that expires objects based on timestamps.
-let memoryMessages: any[] = [];
+let memoryMessages: Message[] = [];
 // In-memory push subscriptions fallback
 const memorySubscriptions: Record<string, any> = {};
 
@@ -42,15 +43,7 @@ export function getRedis(): Redis | null {
   return null;
 }
 
-export interface Message {
-  id: string;
-  nickname: string;
-  text: string;
-  createdAt: number;
-  replyToId?: string;
-  replyToNickname?: string;
-  replyToText?: string;
-}
+export type { Message } from './message-types';
 
 /**
  * Save a message to Redis with a 3 hour TTL, or store in memory if Redis is absent.
