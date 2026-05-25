@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -14,29 +14,20 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export function usePushNotifications() {
-  const [isSupported, setIsSupported] = useState(false);
+  const [isSupported] = useState(
+    typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
+  );
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
-
-  useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setIsSupported(true);
-      setPermission(Notification.permission);
-      
-      navigator.serviceWorker.ready.then((registration) => {
-        registration.pushManager.getSubscription().then((sub) => {
-          setSubscription(sub);
-        });
-      });
-    }
-  }, []);
+  const [permission, setPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' ? Notification.permission : 'default'
+  );
 
   const getClientId = () => {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('ghostroom_client_id');
   };
 
-  const syncSubscriptionToServer = async (sub: PushSubscription) => {
+  const syncSubscriptionToServer = useCallback(async (sub: PushSubscription) => {
     const clientId = getClientId();
     if (!clientId) return;
 
@@ -45,9 +36,9 @@ export function usePushNotifications() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId, subscription: sub }),
     });
-  };
+  }, []);
 
-  const createSubscription = async (shouldRequestPermission: boolean) => {
+  const createSubscription = useCallback(async (shouldRequestPermission: boolean) => {
     if (!isSupported) return null;
 
     let finalPermission = Notification.permission;
@@ -61,6 +52,13 @@ export function usePushNotifications() {
     }
 
     const registration = await navigator.serviceWorker.ready;
+    const existingSub = await registration.pushManager.getSubscription();
+    if (existingSub) {
+      setSubscription(existingSub);
+      await syncSubscriptionToServer(existingSub);
+      return existingSub;
+    }
+
     const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
     if (!vapidPublicKey) {
@@ -76,7 +74,7 @@ export function usePushNotifications() {
     setSubscription(sub);
     await syncSubscriptionToServer(sub);
     return sub;
-  };
+  }, [isSupported, syncSubscriptionToServer]);
 
   const subscribe = async () => {
     try {
@@ -128,7 +126,7 @@ export function usePushNotifications() {
       .catch((err) => {
         console.error('Failed to initialize push subscription:', err);
       });
-  }, [isSupported]);
+  }, [isSupported, createSubscription, syncSubscriptionToServer]);
 
   return {
     isSupported,
