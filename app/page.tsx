@@ -32,7 +32,7 @@ import { getMemeAudioPreviewLabel } from '@/lib/meme-utils';
 interface MessageBubbleProps {
   line: {
     id: string;
-    text?: string;
+    text: string;
     createdAt: number;
     replyToId?: string;
     replyToNickname?: string;

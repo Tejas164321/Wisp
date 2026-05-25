@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { isAllowedMemeAudioUrl } from '@/lib/meme-utils';
 
 const STREAM_RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
 const STREAM_WINDOW_MS = 30_000;
 const STREAM_MAX = 20;
+const ALLOWED_STREAM_HOSTS = ['myinstants.com'];
 
 function getClientKey(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -26,7 +26,21 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const sourceUrl = searchParams.get('url') || '';
 
-  if (!isAllowedMemeAudioUrl(sourceUrl)) {
+  if (!sourceUrl || sourceUrl.length > 512) {
+    return NextResponse.json({ error: 'Unsupported audio URL.' }, { status: 400 });
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(sourceUrl);
+  } catch {
+    return NextResponse.json({ error: 'Unsupported audio URL.' }, { status: 400 });
+  }
+
+  const allowedHost = ALLOWED_STREAM_HOSTS.some(
+    (host) => parsedUrl.hostname === host || parsedUrl.hostname.endsWith(`.${host}`)
+  );
+  if (!allowedHost || parsedUrl.protocol !== 'https:') {
     return NextResponse.json({ error: 'Unsupported audio URL.' }, { status: 400 });
   }
 
@@ -37,11 +51,11 @@ export async function GET(request: Request) {
 
   try {
     const rangeHeader = request.headers.get('range');
-    const upstream = await fetch(sourceUrl, {
+    const upstream = await fetch(parsedUrl.toString(), {
       headers: rangeHeader ? { range: rangeHeader } : undefined,
     });
 
-    if (!upstream.ok && upstream.status !== 206) {
+    if (!(upstream.ok || upstream.status === 206)) {
       return NextResponse.json({ error: 'Unable to fetch audio.' }, { status: 502 });
     }
 

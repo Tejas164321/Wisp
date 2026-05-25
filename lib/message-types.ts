@@ -16,7 +16,7 @@ export interface MemeAudio {
 export interface Message {
   id: string;
   nickname: string;
-  text?: string;
+  text: string;
   createdAt: number;
   replyToId?: string;
   replyToNickname?: string;

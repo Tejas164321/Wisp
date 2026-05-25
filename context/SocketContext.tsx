@@ -280,7 +280,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   // Actions
   const sendMessage = async (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => {
     const messageType: MessageType = payload.type || (payload.memeAudio ? 'meme_audio' : 'text');
-    const outgoingText = payload.text || payload.memeAudio?.title || '';
+    const outgoingText =
+      payload.text || payload.memeAudio?.title || (messageType === 'meme_audio' ? 'Meme sound' : '');
+    if (messageType === 'text' && !outgoingText.trim()) {
+      setError('Cannot whisper empty voids.');
+      return;
+    }
     if (isPollingMode) {
       const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const optimisticMessage: Message = {

@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     const results = (data?.results || data || [])
       .map((item: any) => {
         const candidate = {
-          id: String(item?.id || item?.slug || item?.name || Math.random().toString(36)),
+          id: item?.id || item?.slug || item?.sound || item?.url || item?.name,
           title: item?.name || item?.title || item?.sound_name || item?.slug || 'Meme sound',
           provider: 'myinstants',
           sourceUrl: item?.sound || item?.mp3 || item?.audio || item?.preview || item?.url,

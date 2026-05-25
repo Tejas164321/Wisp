@@ -6,7 +6,7 @@ const MAX_TITLE_LENGTH = 80;
 const MAX_URL_LENGTH = 512;
 
 export function sanitizeMemeTitle(title: string): string {
-  const trimmed = (title || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  const trimmed = (title || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
   return trimmed.slice(0, MAX_TITLE_LENGTH);
 }
 
