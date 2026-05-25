@@ -33,38 +33,54 @@ self.addEventListener('activate', (event) => {
 
 // ─── Push Notifications ────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
+  let data = {
+    title: 'Wisp',
+    body: 'New whisper',
+    icon: '/icon-192.png',
+    url: '/',
+  };
 
-  try {
-    const data = event.data.json();
-    
-    // Show notification only if the client isn't actively looking at the page
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-        let isFocused = false;
-        for (let i = 0; i < windowClients.length; i++) {
-          const windowClient = windowClients[i];
-          if (windowClient.focused) {
-            isFocused = true;
-            break;
-          }
-        }
-
-        // Only show notification if the app is NOT focused (user is away)
-        if (!isFocused) {
-          return self.registration.showNotification(data.title || 'Wisp', {
-            body: data.body || 'New whisper',
-            icon: data.icon || '/icon-192.png',
-            badge: '/favicon-32x32.png',
-            vibrate: [200, 100, 200],
-            data: { url: data.url || '/' },
-          });
-        }
-      })
-    );
-  } catch (err) {
-    console.error('Error handling push event:', err);
+  if (event.data) {
+    try {
+      const json = event.data.json();
+      data = {
+        title: json.title || data.title,
+        body: json.body || data.body,
+        icon: json.icon || data.icon,
+        url: json.url || data.url,
+      };
+    } catch {
+      const textBody = event.data.text();
+      if (textBody) {
+        data.body = textBody;
+      }
+    }
   }
+
+  // Show notification only if the client isn't actively looking at the page
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      let isFocused = false;
+      for (let i = 0; i < windowClients.length; i++) {
+        const windowClient = windowClients[i];
+        if (windowClient.focused) {
+          isFocused = true;
+          break;
+        }
+      }
+
+      // Only show notification if the app is NOT focused (user is away)
+      if (!isFocused) {
+        return self.registration.showNotification(data.title, {
+          body: data.body,
+          icon: data.icon,
+          badge: '/favicon-32x32.png',
+          vibrate: [200, 100, 200],
+          data: { url: data.url },
+        });
+      }
+    })
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
