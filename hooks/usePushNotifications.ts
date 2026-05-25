@@ -14,14 +14,20 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export function usePushNotifications() {
-  const [isSupported] = useState(
-    typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
-  );
+  const [isSupported, setIsSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [permission, setPermission] = useState<NotificationPermission>(
-    typeof window !== 'undefined' ? Notification.permission : 'default'
-  );
+  const [permission, setPermission] = useState<NotificationPermission>('default');
   const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const supported = 'serviceWorker' in navigator && 'PushManager' in window;
+    Promise.resolve().then(() => {
+      setIsSupported(supported);
+      setPermission(Notification.permission);
+    });
+  }, []);
 
   const getClientId = () => {
     if (typeof window === 'undefined') return null;
