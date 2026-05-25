@@ -1,5 +1,6 @@
 import webpush from 'web-push';
-import { getAllPushSubscriptions, removePushSubscription, Message } from './redis';
+import { getAllPushSubscriptions, removePushSubscription } from './redis';
+import type { Message } from './message-types';
 
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
@@ -18,9 +19,10 @@ if (vapidPublicKey && vapidPrivateKey) {
 export async function sendPushNotifications(message: Message, senderClientId?: string) {
   if (!vapidPublicKey || !vapidPrivateKey) return;
 
+  const isMemeAudio = message.type === 'meme_audio';
   const payload = JSON.stringify({
-    title: `New whisper from ${message.nickname}`,
-    body: message.text,
+    title: isMemeAudio ? `Meme sound from ${message.nickname}` : `New whisper from ${message.nickname}`,
+    body: isMemeAudio ? (message.memeAudio?.title || 'Shared a meme sound') : (message.text || ''),
     url: appUrl,
     icon: '/icon-192.png',
   });

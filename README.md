@@ -18,4 +18,8 @@ View your app in AI Studio: https://ai.studio/apps/fcd160d5-b376-407a-8938-4bfa0
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Meme Sounds
+
+Wisp can search and share meme sound effects via the MyInstants public API. Audio playback is proxied through `/api/memes/stream` to avoid CORS issues. Review MyInstants' terms of use before enabling this in production.
 ...
