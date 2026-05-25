@@ -135,7 +135,7 @@ function MessageBubble({
 
   const borderStyles = isSelf 
     ? 'bg-violet-50/80 dark:bg-violet-500/10 border border-violet-200/60 dark:border-violet-500/30 text-violet-900 dark:text-violet-200 rounded-2xl rounded-tr-sm shadow-sm' 
-    : 'bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 text-zinc-850 dark:text-zinc-100 rounded-2xl rounded-tl-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_16px_-4px_rgba(0,0,0,0.4)]';
+    : 'bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 text-zinc-900 dark:text-zinc-100 rounded-2xl rounded-tl-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_16px_-4px_rgba(0,0,0,0.4)]';
 
   return (
     <div className="relative group/bubble flex items-center w-full my-0.5">
@@ -216,7 +216,7 @@ function MessageBubble({
                 <AudioLines className="h-4 w-4" />
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold text-zinc-850 dark:text-zinc-100 truncate">
+                <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                   {line.memeAudio?.title}
                 </span>
                 <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
@@ -1182,7 +1182,7 @@ export default function Home() {
                 className={`flex-1 resize-none bg-transparent pl-0 pr-1 py-1 text-sm outline-none focus:outline-none custom-scrollbar min-h-[24px] max-h-[80px] transition-all ${
                   cooldownLeft > 0 
                   ? 'text-zinc-400 dark:text-zinc-500 placeholder-zinc-450 dark:placeholder-zinc-650 cursor-not-allowed' 
-                  : 'text-zinc-850 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500'
+                  : 'text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500'
                 }`}
                 rows={1}
                 disabled={!isConnected}

@@ -4,6 +4,7 @@ const ALLOWED_MEME_AUDIO_HOSTS = ['myinstants.com'];
 const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = ['myinstants'];
 const MAX_TITLE_LENGTH = 80;
 const MAX_URL_LENGTH = 512;
+const MAX_DURATION_MS = 600000;
 
 export function sanitizeMemeTitle(title: string): string {
   const trimmed = (title || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
@@ -16,6 +17,16 @@ export function isAllowedMemeAudioUrl(rawUrl?: string): boolean {
     const url = new URL(rawUrl);
     if (url.protocol !== 'https:') return false;
     return ALLOWED_MEME_AUDIO_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch {
+    return false;
+  }
+}
+
+export function isAllowedMemeAudioFileUrl(rawUrl?: string): boolean {
+  if (!isAllowedMemeAudioUrl(rawUrl)) return false;
+  try {
+    const url = new URL(rawUrl as string);
+    return url.pathname.startsWith('/media/sounds/');
   } catch {
     return false;
   }
@@ -35,8 +46,8 @@ export function sanitizeMemeAudioPayload(payload: Partial<MemeAudio> | undefined
   const imageUrl = payload.imageUrl?.trim();
   const pageUrl = payload.pageUrl?.trim();
 
-  if (!title || !sourceUrl || !isAllowedMemeAudioUrl(sourceUrl)) return null;
-  if (previewUrl && !isAllowedMemeAudioUrl(previewUrl)) return null;
+  if (!title || !sourceUrl || !isAllowedMemeAudioFileUrl(sourceUrl)) return null;
+  if (previewUrl && !isAllowedMemeAudioFileUrl(previewUrl)) return null;
   if (imageUrl && !isAllowedMemeAudioUrl(imageUrl)) return null;
   if (pageUrl && (!isAllowedMemeAudioUrl(pageUrl) || pageUrl.length > MAX_URL_LENGTH)) return null;
 
@@ -48,7 +59,7 @@ export function sanitizeMemeAudioPayload(payload: Partial<MemeAudio> | undefined
     provider: payload.provider,
     sourceUrl,
     previewUrl,
-    duration: typeof payload.duration === 'number' ? Math.max(0, Math.min(payload.duration, 600000)) : undefined,
+    duration: typeof payload.duration === 'number' ? Math.max(0, Math.min(payload.duration, MAX_DURATION_MS)) : undefined,
     imageUrl,
     pageUrl,
   };
