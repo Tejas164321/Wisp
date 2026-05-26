@@ -5,10 +5,19 @@ import type { Message } from './message-types';
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
 const appUrl = process.env.APP_URL || 'http://localhost:3000';
+const notificationUrl = '/';
+
+function getVapidContactEmail(urlValue: string) {
+  try {
+    return `mailto:admin@${new URL(urlValue).hostname}`;
+  } catch {
+    return 'mailto:admin@localhost';
+  }
+}
 
 if (vapidPublicKey && vapidPrivateKey) {
   webpush.setVapidDetails(
-    `mailto:admin@${new URL(appUrl).hostname}`,
+    getVapidContactEmail(appUrl),
     vapidPublicKey,
     vapidPrivateKey
   );
@@ -23,7 +32,7 @@ export async function sendPushNotifications(message: Message, senderClientId?: s
   const payload = JSON.stringify({
     title: isMemeAudio ? `Meme sound from ${message.nickname}` : `New whisper from ${message.nickname}`,
     body: isMemeAudio ? (message.memeAudio?.title || 'Shared a meme sound') : (message.text || ''),
-    url: appUrl,
+    url: notificationUrl,
     icon: '/icon-192.png',
   });
 
