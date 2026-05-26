@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 const STREAM_RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
 const STREAM_WINDOW_MS = 30_000;
 const STREAM_MAX = 20;
-const ALLOWED_STREAM_HOSTS = ['myinstants.com', 'www.myinstants.com', 'static.myinstants.com'];
+const ALLOWED_STREAM_HOST_SUFFIXES = ['myinstants.com'];
 
 function getClientKey(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -22,6 +22,10 @@ function isRateLimited(key: string) {
   return existing.count > STREAM_MAX;
 }
 
+function isAllowedStreamHost(hostname: string) {
+  return ALLOWED_STREAM_HOST_SUFFIXES.some((allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`));
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const sourceUrl = searchParams.get('url') || '';
@@ -37,8 +41,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unsupported audio URL.' }, { status: 400 });
   }
 
-  const canonicalHost = ALLOWED_STREAM_HOSTS.find((host) => parsedUrl.hostname === host);
-  if (!canonicalHost || parsedUrl.protocol !== 'https:') {
+  if (!isAllowedStreamHost(parsedUrl.hostname) || parsedUrl.protocol !== 'https:') {
     return NextResponse.json({ error: 'Unsupported audio URL.' }, { status: 400 });
   }
 
@@ -53,7 +56,7 @@ export async function GET(request: Request) {
 
   try {
     const rangeHeader = request.headers.get('range');
-    const safeUrl = new URL(`${parsedUrl.pathname}${parsedUrl.search}`, `https://${canonicalHost}`);
+    const safeUrl = new URL(`${parsedUrl.pathname}${parsedUrl.search}`, `https://${parsedUrl.hostname}`);
     const upstream = await fetch(safeUrl.toString(), {
       headers: rangeHeader ? { range: rangeHeader } : undefined,
     });
