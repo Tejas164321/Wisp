@@ -7,6 +7,35 @@ const RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
 const CACHE_TTL_MS = 90_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
+const MYINSTANTS_BASE_URL = 'https://www.myinstants.com';
+
+function normalizeProviderUrl(rawUrl: unknown): string | undefined {
+  if (typeof rawUrl !== 'string') return undefined;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return undefined;
+
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`;
+  }
+
+  if (trimmed.startsWith('/')) {
+    try {
+      return new URL(trimmed, MYINSTANTS_BASE_URL).toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    try {
+      return new URL(`https://${trimmed.replace(/^https?:\/\//, '')}`).toString();
+    } catch {
+      return undefined;
+    }
+  }
+}
 
 function getClientKey(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -72,11 +101,13 @@ export async function GET(request: Request) {
         const candidate = {
           id: item?.id || item?.slug || item?.sound || item?.url || item?.name,
           title: item?.name || item?.title || item?.sound_name || item?.slug || 'Meme sound',
-          provider: 'myinstants',
-          sourceUrl: item?.sound || item?.mp3 || item?.audio || item?.preview || item?.url,
-          previewUrl: item?.sound || item?.preview || item?.mp3 || item?.audio,
-          imageUrl: item?.icon || item?.image || item?.thumbnail,
-          pageUrl: item?.url || item?.permalink || (item?.slug ? `https://www.myinstants.com/instant/${item.slug}/` : undefined),
+          provider: 'myinstants' as const,
+          sourceUrl: normalizeProviderUrl(item?.sound || item?.mp3 || item?.audio || item?.preview || item?.url),
+          previewUrl: normalizeProviderUrl(item?.sound || item?.preview || item?.mp3 || item?.audio),
+          imageUrl: normalizeProviderUrl(item?.icon || item?.image || item?.thumbnail),
+          pageUrl: normalizeProviderUrl(
+            item?.url || item?.permalink || (item?.slug ? `https://www.myinstants.com/instant/${item.slug}/` : undefined)
+          ),
           duration: item?.duration ? Number(item.duration) * 1000 : undefined,
         };
         return sanitizeMemeAudioPayload(candidate);

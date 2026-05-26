@@ -21,7 +21,8 @@ import {
   Download,
   Search,
   ExternalLink,
-  AudioLines
+  AudioLines,
+  Plus
 } from 'lucide-react';
 import { useSocketState } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -1167,9 +1168,10 @@ export default function Home() {
                     ? 'border-violet-300 bg-violet-50 text-violet-600 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
                     : 'border-zinc-200 bg-white text-zinc-500 hover:text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400'
                 }`}
-                aria-label="Toggle meme sounds"
+                aria-label="Open meme audio sharing"
+                title="Share meme audio"
               >
-                <AudioLines className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
               </button>
 
               {/* Text area input for message writing */}
