@@ -1,7 +1,23 @@
 import type { MemeAudio, MemeAudioProvider } from './message-types';
 
-const ALLOWED_MEME_AUDIO_HOSTS = ['myinstants.com'];
-const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = ['myinstants'];
+const PROVIDER_URL_RULES: Record<
+  MemeAudioProvider,
+  { hosts: string[]; pathPrefixes?: string[]; requiredExt?: string[] }
+> = {
+  myinstants: {
+    hosts: ['myinstants.com'],
+    pathPrefixes: ['/media/sounds/'],
+  },
+  voicy: {
+    hosts: ['voicy.network', 'cdn.voicy.network', 'media.voicy.network'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+  soundboard101: {
+    hosts: ['101soundboards.com', 'cdn.101soundboards.com', 'static.101soundboards.com'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+};
+const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = ['myinstants', 'voicy', 'soundboard101'];
 const MAX_TITLE_LENGTH = 80;
 const MAX_URL_LENGTH = 512;
 const MAX_DURATION_MS = 600000;
@@ -16,17 +32,47 @@ export function isAllowedMemeAudioUrl(rawUrl?: string): boolean {
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== 'https:') return false;
-    return ALLOWED_MEME_AUDIO_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+    return Object.values(PROVIDER_URL_RULES).some((rule) =>
+      rule.hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))
+    );
   } catch {
     return false;
   }
 }
 
-export function isAllowedMemeAudioFileUrl(rawUrl?: string): boolean {
+export function isAllowedMemeAudioFileUrl(rawUrl?: string, provider?: MemeAudioProvider): boolean {
   if (!isAllowedMemeAudioUrl(rawUrl)) return false;
   try {
     const url = new URL(rawUrl as string);
-    return url.pathname.startsWith('/media/sounds/');
+    if (!provider) {
+      return Object.values(PROVIDER_URL_RULES).some((rule) => {
+        const hostAllowed = rule.hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+        if (!hostAllowed) return false;
+        if (rule.pathPrefixes?.length) {
+          return rule.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix));
+        }
+        if (rule.requiredExt?.length) {
+          const normalizedPath = url.pathname.toLowerCase();
+          return rule.requiredExt.some((ext) => normalizedPath.endsWith(ext));
+        }
+        return false;
+      });
+    }
+
+    const rule = PROVIDER_URL_RULES[provider];
+    const hostAllowed = rule.hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+    if (!hostAllowed) return false;
+
+    if (rule.pathPrefixes?.length) {
+      return rule.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix));
+    }
+
+    if (rule.requiredExt?.length) {
+      const normalizedPath = url.pathname.toLowerCase();
+      return rule.requiredExt.some((ext) => normalizedPath.endsWith(ext));
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -39,6 +85,7 @@ export function isAllowedMemeProvider(provider?: string): provider is MemeAudioP
 export function sanitizeMemeAudioPayload(payload: Partial<MemeAudio> | undefined): MemeAudio | null {
   if (!payload) return null;
   if (!payload.provider || !isAllowedMemeProvider(payload.provider)) return null;
+  const provider = payload.provider;
 
   const title = sanitizeMemeTitle(payload.title || '');
   const sourceUrl = payload.sourceUrl?.trim();
@@ -46,8 +93,8 @@ export function sanitizeMemeAudioPayload(payload: Partial<MemeAudio> | undefined
   const imageUrl = payload.imageUrl?.trim();
   const pageUrl = payload.pageUrl?.trim();
 
-  if (!title || !sourceUrl || !isAllowedMemeAudioFileUrl(sourceUrl)) return null;
-  if (previewUrl && !isAllowedMemeAudioFileUrl(previewUrl)) return null;
+  if (!title || !sourceUrl || !isAllowedMemeAudioFileUrl(sourceUrl, provider)) return null;
+  if (previewUrl && !isAllowedMemeAudioFileUrl(previewUrl, provider)) return null;
   if (imageUrl && !isAllowedMemeAudioUrl(imageUrl)) return null;
   if (pageUrl && (!isAllowedMemeAudioUrl(pageUrl) || pageUrl.length > MAX_URL_LENGTH)) return null;
 
@@ -56,7 +103,7 @@ export function sanitizeMemeAudioPayload(payload: Partial<MemeAudio> | undefined
   return {
     id: rawId.toString().slice(0, 80),
     title,
-    provider: payload.provider,
+    provider,
     sourceUrl,
     previewUrl,
     duration: typeof payload.duration === 'number' ? Math.max(0, Math.min(payload.duration, MAX_DURATION_MS)) : undefined,

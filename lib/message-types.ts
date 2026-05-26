@@ -1,6 +1,6 @@
 export type MessageType = 'text' | 'meme_audio';
 
-export type MemeAudioProvider = 'myinstants';
+export type MemeAudioProvider = 'myinstants' | 'voicy' | 'soundboard101';
 
 export interface MemeAudio {
   id: string;

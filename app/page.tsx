@@ -30,6 +30,22 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 import type { MemeAudio, Message } from '@/lib/message-types';
 import { getMemeAudioPreviewLabel } from '@/lib/meme-utils';
 
+const MEME_PROVIDER_LABELS: Record<MemeAudio['provider'], string> = {
+  myinstants: 'MyInstants',
+  voicy: 'Voicy',
+  soundboard101: '101Soundboards',
+};
+
+function getMemeAudioSourceUrl(memeAudio?: MemeAudio): string {
+  if (!memeAudio) return '';
+  const sourceUrl = memeAudio.previewUrl || memeAudio.sourceUrl;
+  if (!sourceUrl) return '';
+  if (memeAudio.provider === 'myinstants') {
+    return `/api/memes/stream?url=${encodeURIComponent(sourceUrl)}`;
+  }
+  return sourceUrl;
+}
+
 interface MessageBubbleProps {
   line: {
     id: string;
@@ -66,10 +82,8 @@ function MessageBubble({
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isMemeAudio = line.type === 'meme_audio' && line.memeAudio;
   const messagePreview = isMemeAudio ? getMemeAudioPreviewLabel(line.memeAudio) : (line.text || '');
-  const providerLabel = line.memeAudio?.provider === 'myinstants' ? 'MyInstants' : line.memeAudio?.provider;
-  const memeAudioSource = isMemeAudio
-    ? `/api/memes/stream?url=${encodeURIComponent(line.memeAudio?.previewUrl || line.memeAudio?.sourceUrl || '')}`
-    : '';
+  const providerLabel = line.memeAudio?.provider ? MEME_PROVIDER_LABELS[line.memeAudio.provider] : undefined;
+  const memeAudioSource = isMemeAudio ? getMemeAudioSourceUrl(line.memeAudio) : '';
 
   const triggerReply = () => {
     onReply({ id: line.id, nickname: groupNickname, text: messagePreview });
@@ -1038,7 +1052,7 @@ export default function Home() {
                               handleMemeSearch();
                             }
                           }}
-                          placeholder="Search meme sounds (MyInstants)"
+                          placeholder="Search meme sounds (multi-source)"
                           className="flex-1 bg-transparent text-xs text-zinc-700 dark:text-zinc-200 outline-none placeholder:text-zinc-400"
                           aria-label="Search meme sounds"
                         />
@@ -1060,8 +1074,8 @@ export default function Home() {
 
                     <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
                       {memeResults.map((result) => {
-                        const audioSource = `/api/memes/stream?url=${encodeURIComponent(result.previewUrl || result.sourceUrl)}`;
-                        const resultProvider = result.provider === 'myinstants' ? 'MyInstants' : result.provider;
+                        const audioSource = getMemeAudioSourceUrl(result);
+                        const resultProvider = MEME_PROVIDER_LABELS[result.provider];
                         return (
                           <div
                             key={result.id}
