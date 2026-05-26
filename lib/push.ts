@@ -5,6 +5,7 @@ import type { Message } from './message-types';
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
 const appUrl = process.env.APP_URL || 'http://localhost:3000';
+// Keep notification target same-origin so service worker focuses/opens the active app reliably.
 const DEFAULT_NOTIFICATION_PATH = '/';
 
 function getVapidContactEmail(urlValue: string) {
