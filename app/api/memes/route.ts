@@ -8,33 +8,40 @@ const CACHE_TTL_MS = 90_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
 const MYINSTANTS_BASE_URL = 'https://www.myinstants.com';
+const ALLOWED_PROVIDER_HOST_SUFFIXES = ['myinstants.com'];
+
+function isAllowedProviderHost(hostname: string): boolean {
+  return ALLOWED_PROVIDER_HOST_SUFFIXES.some(
+    (allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`)
+  );
+}
 
 function normalizeProviderUrl(rawUrl: unknown): string | undefined {
   if (typeof rawUrl !== 'string') return undefined;
   const trimmed = rawUrl.trim();
   if (!trimmed) return undefined;
 
-  if (trimmed.startsWith('//')) {
-    return `https:${trimmed}`;
-  }
-
-  if (trimmed.startsWith('/')) {
-    try {
-      return new URL(trimmed, MYINSTANTS_BASE_URL).toString();
-    } catch {
-      return undefined;
-    }
-  }
+  let resolved: URL;
 
   try {
-    return new URL(trimmed).toString();
-  } catch {
-    try {
-      return new URL(`https://${trimmed.replace(/^https?:\/\//, '')}`).toString();
-    } catch {
-      return undefined;
+    if (trimmed.startsWith('//')) {
+      resolved = new URL(`https:${trimmed}`);
+    } else if (trimmed.startsWith('/')) {
+      resolved = new URL(trimmed, MYINSTANTS_BASE_URL);
+    } else if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)) {
+      resolved = new URL(trimmed);
+    } else {
+      resolved = new URL(`https://${trimmed}`);
     }
+  } catch {
+    return undefined;
   }
+
+  if (resolved.protocol !== 'https:' || !isAllowedProviderHost(resolved.hostname)) {
+    return undefined;
+  }
+
+  return resolved.toString();
 }
 
 function getClientKey(request: Request) {
