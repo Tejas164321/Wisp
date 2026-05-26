@@ -45,7 +45,18 @@ export function isAllowedMemeAudioFileUrl(rawUrl?: string, provider?: MemeAudioP
   try {
     const url = new URL(rawUrl as string);
     if (!provider) {
-      return true;
+      return Object.values(PROVIDER_URL_RULES).some((rule) => {
+        const hostAllowed = rule.hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+        if (!hostAllowed) return false;
+        if (rule.pathPrefixes?.length) {
+          return rule.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix));
+        }
+        if (rule.requiredExt?.length) {
+          const normalizedPath = url.pathname.toLowerCase();
+          return rule.requiredExt.some((ext) => normalizedPath.endsWith(ext));
+        }
+        return false;
+      });
     }
 
     const rule = PROVIDER_URL_RULES[provider];

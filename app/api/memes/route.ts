@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { MemeAudio } from '@/lib/message-types';
 import { sanitizeMemeAudioPayload, sanitizeMemeTitle } from '@/lib/meme-utils';
 
 const SEARCH_CACHE = new Map<string, { expiresAt: number; payload: any }>();
@@ -18,8 +19,21 @@ const ALLOWED_PROVIDER_HOST_SUFFIXES = [
   'static.101soundboards.com',
 ];
 const MEME_RESULT_LIMIT = 24;
+const MAX_RESULTS_PER_PROVIDER = 10;
+const MAX_TITLE_URL_CANDIDATES = 40;
+const MAX_DIRECT_URL_CANDIDATES = 80;
+const MAX_PROVIDER_HTML_LENGTH = 300_000;
+const PROVIDER_REQUEST_TIMEOUT_MS = 4_500;
+const SCORE_EXACT_MATCH = 50;
+const SCORE_TOKEN_MATCH = 14;
+const SCORE_PARTIAL_TOKEN_MATCH = 7;
+const SCORE_SYNONYM_MATCH = 6;
+const SCORE_TREND_HINT = 2;
+const SCORE_INDIAN_HINT = 3;
+const SCORE_PROVIDER_DIVERSITY = 4;
 const TREND_HINTS = ['meme', 'viral', 'trending', 'funny', 'template', 'reel', 'shorts', 'sigma'];
 const INDIAN_HINTS = ['indian', 'india', 'bollywood', 'hindi', 'desi', 'bhojpuri', 'tollywood'];
+const HTML_AUDIO_URL_PATTERN = String.raw`https:\/\/[^"'\s<]+\.(?:mp3|wav|ogg|m4a)(?:\?[^"'\s<]*)?`;
 const TOKEN_SYNONYMS: Record<string, string[]> = {
   meme: ['funny', 'viral', 'template'],
   trend: ['trending', 'viral'],
@@ -73,15 +87,19 @@ function tokenize(value: string): string[] {
 }
 
 function buildQueryVariants(query: string): string[] {
-  const variants = [query, `${query} meme`, `${query} funny`, `${query} viral`, `${query} indian meme`, `trending ${query}`];
+  const hasIndianContext = INDIAN_HINTS.some((hint) => normalizeSpace(query).includes(hint));
+  const variants = [query, `${query} meme`, `${query} funny`, `${query} viral`, `trending ${query}`, `popular ${query}`];
+  if (hasIndianContext) {
+    variants.push(`${query} indian`);
+  }
   return [...new Set(variants.map((variant) => sanitizeMemeTitle(variant)).filter((variant) => variant.length >= 2))].slice(0, 6);
 }
 
-async function fetchJson(url: string): Promise<any | null> {
+async function fetchJson(url: string): Promise<unknown | null> {
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Wisp Meme Search' },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return null;
     return response.json();
@@ -94,16 +112,20 @@ async function fetchText(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Wisp Meme Search' },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return null;
-    return response.text();
+    const text = await response.text();
+    if (text.length > MAX_PROVIDER_HTML_LENGTH) {
+      return text.slice(0, MAX_PROVIDER_HTML_LENGTH);
+    }
+    return text;
   } catch {
     return null;
   }
 }
 
-function build101SoundboardsSearchUrl(query: string): string {
+function buildSoundboard101SearchUrl(query: string): string {
   const url = new URL('https://www.101soundboards.com/search');
   url.searchParams.set('keyword', query);
   return url.toString();
@@ -125,20 +147,29 @@ function getTitleFromAudioUrl(audioUrl: string): string {
   }
 }
 
+function asString(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return undefined;
+}
+
 function extractAudioCandidates(html: string): Array<{ title?: string; sourceUrl: string }> {
   const results: Array<{ title?: string; sourceUrl: string }> = [];
-  const titleAndUrlPattern = /(data-title|title|aria-label)=["']([^"']{2,120})["'][^>]{0,300}?(https:\/\/[^"'\s<]+\.(?:mp3|wav|ogg|m4a)(?:\?[^"'\s<]*)?)/gi;
-  const directUrlPattern = /(https:\/\/[^"'\s<]+\.(?:mp3|wav|ogg|m4a)(?:\?[^"'\s<]*)?)/gi;
+  const titleAndUrlPattern = new RegExp(
+    String.raw`(data-title|title|aria-label)=["']([^"']{2,120})["'][^>]{0,300}?(${HTML_AUDIO_URL_PATTERN})`,
+    'gi'
+  );
+  const directUrlPattern = new RegExp(`(${HTML_AUDIO_URL_PATTERN})`, 'gi');
 
   let match: RegExpExecArray | null;
-  while ((match = titleAndUrlPattern.exec(html)) && results.length < 40) {
+  while ((match = titleAndUrlPattern.exec(html)) && results.length < MAX_TITLE_URL_CANDIDATES) {
     results.push({
       title: sanitizeMemeTitle(match[2]),
       sourceUrl: match[3],
     });
   }
 
-  while ((match = directUrlPattern.exec(html)) && results.length < 80) {
+  while ((match = directUrlPattern.exec(html)) && results.length < MAX_DIRECT_URL_CANDIDATES) {
     results.push({
       sourceUrl: match[1],
     });
@@ -157,19 +188,40 @@ async function searchMyInstants(variantQuery: string, page: number) {
     return [] as ReturnType<typeof sanitizeMemeAudioPayload>[];
   }
 
-  return (data?.results || data || [])
-    .map((item: any) => {
+  const items = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { results?: unknown[] })?.results)
+      ? (data as { results: unknown[] }).results
+      : [];
+
+  return items
+    .map((item) => {
+      const typedItem = item as Record<string, unknown>;
+      const slug = asString(typedItem?.slug);
       const candidate = {
-        id: item?.id || item?.slug || item?.sound || item?.url || item?.name,
-        title: item?.name || item?.title || item?.sound_name || item?.slug || 'Meme sound',
+        id:
+          asString(typedItem?.id)
+          || slug
+          || asString(typedItem?.sound)
+          || asString(typedItem?.url)
+          || asString(typedItem?.name)
+          || 'meme-sound',
+        title:
+          asString(typedItem?.name)
+          || asString(typedItem?.title)
+          || asString(typedItem?.sound_name)
+          || slug
+          || 'Meme sound',
         provider: 'myinstants' as const,
-        sourceUrl: normalizeProviderUrl(item?.sound || item?.mp3 || item?.audio || item?.preview || item?.url),
-        previewUrl: normalizeProviderUrl(item?.sound || item?.preview || item?.mp3 || item?.audio),
-        imageUrl: normalizeProviderUrl(item?.icon || item?.image || item?.thumbnail),
+        sourceUrl: normalizeProviderUrl(typedItem?.sound || typedItem?.mp3 || typedItem?.audio || typedItem?.preview || typedItem?.url),
+        previewUrl: normalizeProviderUrl(typedItem?.sound || typedItem?.preview || typedItem?.mp3 || typedItem?.audio),
+        imageUrl: normalizeProviderUrl(typedItem?.icon || typedItem?.image || typedItem?.thumbnail),
         pageUrl: normalizeProviderUrl(
-          item?.url || item?.permalink || (item?.slug ? `https://www.myinstants.com/instant/${item.slug}/` : undefined)
+          typedItem?.url
+            || typedItem?.permalink
+            || (slug ? `https://www.myinstants.com/instant/${slug}/` : undefined)
         ),
-        duration: item?.duration ? Number(item.duration) * 1000 : undefined,
+        duration: typedItem?.duration ? Number(typedItem.duration) * 1000 : undefined,
       };
       return sanitizeMemeAudioPayload(candidate);
     })
@@ -203,60 +255,68 @@ function scoreMemeResult(query: string, title: string, provider: string): number
   const titleTokens = new Set(tokenize(title));
 
   let score = 0;
-  if (titleText.includes(queryText)) score += 50;
+  const exactMatch = titleText.includes(queryText);
+  if (exactMatch) {
+    score += SCORE_EXACT_MATCH;
+  } else {
+    for (const token of queryTokens) {
+      if (titleTokens.has(token)) {
+        score += SCORE_TOKEN_MATCH;
+        continue;
+      }
 
-  for (const token of queryTokens) {
-    if (titleTokens.has(token)) {
-      score += 14;
-      continue;
-    }
+      if (titleText.includes(token)) score += SCORE_PARTIAL_TOKEN_MATCH;
 
-    if (titleText.includes(token)) score += 7;
-
-    const synonyms = TOKEN_SYNONYMS[token] || [];
-    if (synonyms.some((synonym) => titleTokens.has(synonym) || titleText.includes(synonym))) {
-      score += 6;
+      const synonyms = TOKEN_SYNONYMS[token] || [];
+      if (synonyms.some((synonym) => titleTokens.has(synonym) || titleText.includes(synonym))) {
+        score += SCORE_SYNONYM_MATCH;
+      }
     }
   }
 
-  score += TREND_HINTS.reduce((total, hint) => total + (titleText.includes(hint) ? 2 : 0), 0);
-  score += INDIAN_HINTS.reduce((total, hint) => total + (titleText.includes(hint) ? 3 : 0), 0);
-  if (provider !== 'myinstants') score += 4;
+  score += TREND_HINTS.reduce((total, hint) => total + (titleText.includes(hint) ? SCORE_TREND_HINT : 0), 0);
+  score += INDIAN_HINTS.reduce((total, hint) => total + (titleText.includes(hint) ? SCORE_INDIAN_HINT : 0), 0);
+  if (provider !== 'myinstants') score += SCORE_PROVIDER_DIVERSITY;
 
   return score;
 }
 
-function rankAndMixResults(query: string, rawResults: any[]) {
-  const deduped = new Map<string, any>();
+function rankAndMixResults(query: string, rawResults: MemeAudio[]) {
+  const deduped = new Map<string, MemeAudio>();
+  const scoreByKey = new Map<string, number>();
 
   rawResults.forEach((result) => {
     if (!result) return;
     const dedupeKey = `${result.sourceUrl || ''}::${normalizeSpace(result.title || '')}`;
+    const nextScore = scoreMemeResult(query, result.title || '', result.provider || '');
     const existing = deduped.get(dedupeKey);
     if (!existing) {
       deduped.set(dedupeKey, result);
+      scoreByKey.set(dedupeKey, nextScore);
       return;
     }
 
-    const existingScore = scoreMemeResult(query, existing.title || '', existing.provider || '');
-    const nextScore = scoreMemeResult(query, result.title || '', result.provider || '');
+    const existingScore = scoreByKey.get(dedupeKey) || 0;
     if (nextScore > existingScore) {
       deduped.set(dedupeKey, result);
+      scoreByKey.set(dedupeKey, nextScore);
     }
   });
 
   const sorted = [...deduped.values()].sort((a, b) => {
-    const scoreDiff = scoreMemeResult(query, b.title || '', b.provider || '') - scoreMemeResult(query, a.title || '', a.provider || '');
+    const keyA = `${a.sourceUrl || ''}::${normalizeSpace(a.title || '')}`;
+    const keyB = `${b.sourceUrl || ''}::${normalizeSpace(b.title || '')}`;
+    const scoreDiff = (scoreByKey.get(keyB) || 0) - (scoreByKey.get(keyA) || 0);
     if (scoreDiff !== 0) return scoreDiff;
     return (a.title || '').localeCompare(b.title || '');
   });
 
   const providerCounts = new Map<string, number>();
-  const mixed: any[] = [];
+  const mixed: MemeAudio[] = [];
   for (const result of sorted) {
     const provider = result.provider || 'unknown';
     const count = providerCounts.get(provider) || 0;
-    if (count >= 10) continue;
+    if (count >= MAX_RESULTS_PER_PROVIDER) continue;
     providerCounts.set(provider, count + 1);
     mixed.push(result);
     if (mixed.length >= MEME_RESULT_LIMIT) break;
@@ -319,7 +379,7 @@ export async function GET(request: Request) {
       searchTasks.push(searchMyInstants(variant, 1));
     });
     searchTasks.push(searchHtmlProvider(buildVoicySearchUrl(safeQuery), 'voicy'));
-    searchTasks.push(searchHtmlProvider(build101SoundboardsSearchUrl(safeQuery), 'soundboard101'));
+    searchTasks.push(searchHtmlProvider(buildSoundboard101SearchUrl(safeQuery), 'soundboard101'));
 
     const settled = await Promise.allSettled(searchTasks);
     const rawResults = settled.flatMap((item) => (item.status === 'fulfilled' ? item.value : []));
@@ -329,7 +389,6 @@ export async function GET(request: Request) {
     }
 
     const payload = {
-      provider: 'multi-source',
       results,
       next: null,
       previous: null,
