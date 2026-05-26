@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 const STREAM_RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
 const STREAM_WINDOW_MS = 30_000;
 const STREAM_MAX = 20;
-const ALLOWED_STREAM_BASE_HOSTS = ['myinstants.com'];
+const ALLOWED_STREAM_HOST_SUFFIXES = ['myinstants.com'];
 
 function getClientKey(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -23,7 +23,7 @@ function isRateLimited(key: string) {
 }
 
 function isAllowedStreamHost(hostname: string) {
-  return ALLOWED_STREAM_BASE_HOSTS.some((allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`));
+  return ALLOWED_STREAM_HOST_SUFFIXES.some((allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`));
 }
 
 export async function GET(request: Request) {
