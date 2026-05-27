@@ -80,7 +80,7 @@ app.prepare().then(() => {
         const history = await fetchMessageHistory(room.key);
         socket.emit('room_joined', room);
         socket.emit('history', history);
-        io.to(room.key).emit('user_count', io.sockets.adapter.rooms.get(room.key)?.size || 1);
+        io.to(room.key).emit('user_count', io.sockets.adapter.rooms.get(room.key)?.size || 0);
       } catch (err) {
         console.error('Error processing join_room:', err);
         socket.emit('room_join_failed', { reason: 'Unable to join room right now.' });
@@ -157,7 +157,7 @@ app.prepare().then(() => {
           }
 
           const newMsg: Message = {
-            id: Math.random().toString(36).substring(2, 15) + Date.now().toString(36),
+            id: globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 10)}`,
             nickname: nickname || 'AnonymousGhost',
             text: processedText,
             createdAt: now,
@@ -197,7 +197,7 @@ app.prepare().then(() => {
       if (!room) return;
       socket.leave(room.key);
       socketRoomMap.delete(socket.id);
-      io.to(room.key).emit('stop_typing', { socketId: socket.id });
+      io.to(room.key).emit('stop_typing', {});
       io.to(room.key).emit('user_count', io.sockets.adapter.rooms.get(room.key)?.size || 0);
     });
 
@@ -206,7 +206,7 @@ app.prepare().then(() => {
       const room = socketRoomMap.get(socket.id);
       if (room) {
         socketRoomMap.delete(socket.id);
-        io.to(room.key).emit('stop_typing', { socketId: socket.id });
+        io.to(room.key).emit('stop_typing', {});
         io.to(room.key).emit('user_count', io.sockets.adapter.rooms.get(room.key)?.size || 0);
       }
     });

@@ -33,7 +33,7 @@ const ROOM_SUFFIXES = [
 ];
 
 export function generateRoomKey(): string {
-  return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  return String(secureRandomInt(10000)).padStart(4, '0');
 }
 
 export function isValidRoomKey(key: string): boolean {
@@ -41,8 +41,8 @@ export function isValidRoomKey(key: string): boolean {
 }
 
 export function generateRoomName(): string {
-  const theme = ROOM_THEMES[Math.floor(Math.random() * ROOM_THEMES.length)];
-  const suffix = ROOM_SUFFIXES[Math.floor(Math.random() * ROOM_SUFFIXES.length)];
+  const theme = ROOM_THEMES[secureRandomInt(ROOM_THEMES.length)];
+  const suffix = ROOM_SUFFIXES[secureRandomInt(ROOM_SUFFIXES.length)];
   return `${theme}${suffix}`;
 }
 
@@ -51,4 +51,15 @@ export function generateRoom(): ChatRoom {
     key: generateRoomKey(),
     name: generateRoomName(),
   };
+}
+
+function secureRandomInt(max: number): number {
+  if (max <= 0) return 0;
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj?.getRandomValues) {
+    const randomBuffer = new Uint32Array(1);
+    cryptoObj.getRandomValues(randomBuffer);
+    return randomBuffer[0] % max;
+  }
+  return Math.floor(Math.random() * max);
 }

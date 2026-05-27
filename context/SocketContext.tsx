@@ -63,6 +63,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const isCurrentlyTypingRef = useRef(false);
   const pendingJoinResolverRef = useRef<((ok: boolean) => void) | null>(null);
   const pendingJoinRoomRef = useRef<ChatRoom | null>(null);
+  const joinedRoomKeyRef = useRef<string | null>(null);
 
   const soundEnabledRef = useRef(soundEnabled);
   useEffect(() => {
@@ -105,21 +106,27 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       storedNickname = generateNickname();
       localStorage.setItem('ghostroom_nickname', storedNickname);
     }
-    setNickname(storedNickname);
+    setTimeout(() => {
+      setNickname(storedNickname);
+    }, 0);
 
     let storedClientId = localStorage.getItem('ghostroom_client_id');
     if (!storedClientId) {
       storedClientId = `client-${Math.random().toString(36).substring(2, 15)}${Date.now().toString(36)}`;
       localStorage.setItem('ghostroom_client_id', storedClientId);
     }
-    setClientId(storedClientId);
+    setTimeout(() => {
+      setClientId(storedClientId);
+    }, 0);
 
     const storedRoomRaw = localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
     if (storedRoomRaw) {
       try {
         const parsed = JSON.parse(storedRoomRaw) as ChatRoom;
         if (parsed?.key && parsed?.name && isValidRoomKey(parsed.key)) {
-          setActiveRoom({ key: parsed.key, name: parsed.name });
+          setTimeout(() => {
+            setActiveRoom({ key: parsed.key, name: parsed.name });
+          }, 0);
         } else {
           localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
         }
@@ -164,6 +171,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     socketClient.on('room_joined', (room: ChatRoom) => {
+      joinedRoomKeyRef.current = room.key;
       setActiveRoom(room);
       if (typeof window !== 'undefined') {
         localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
@@ -179,6 +187,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     socketClient.on('room_join_failed', (payload: { reason?: string }) => {
+      joinedRoomKeyRef.current = null;
       setIsJoiningRoom(false);
       setRoomJoinError(payload?.reason || 'Unable to join this room.');
       if (pendingJoinResolverRef.current) {
@@ -204,7 +213,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     socketClient.on('message', (newMsg: Message) => {
-      if (activeRoomRef.current && newMsg.roomKey && newMsg.roomKey !== activeRoomRef.current.key) return;
+      if (!activeRoomRef.current) return;
+      if (!newMsg.roomKey || newMsg.roomKey !== activeRoomRef.current.key) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === newMsg.id)) {
           return prev;
@@ -264,8 +274,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!socket || !isSocketConnected || !activeRoom) return;
+    if (joinedRoomKeyRef.current === activeRoom.key) return;
     socket.emit('join_room', { roomKey: activeRoom.key, roomName: activeRoom.name });
-  }, [socket, isSocketConnected, activeRoom?.key, activeRoom?.name]);
+  }, [socket, isSocketConnected, activeRoom]);
 
   useEffect(() => {
     if (!isPollingMode || !nickname || !clientId || !activeRoom) return;
@@ -336,6 +347,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
     setActiveRoom(room);
     if (socket && isSocketConnected) {
+      joinedRoomKeyRef.current = null;
       socket.emit('join_room', { roomKey: room.key, roomName: room.name });
     } else {
       setIsJoiningRoom(false);
@@ -361,6 +373,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       return new Promise((resolve) => {
         pendingJoinResolverRef.current = resolve;
         pendingJoinRoomRef.current = room;
+        joinedRoomKeyRef.current = null;
         socket.emit('join_room', { roomKey: key });
       });
     }
@@ -377,6 +390,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     if (socket && isSocketConnected) {
       socket.emit('leave_room');
     }
+    joinedRoomKeyRef.current = null;
     if (typeof window !== 'undefined') {
       localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
     }
@@ -407,8 +421,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (isPollingMode) {
-      const now = Date.now();
-      const tempId = `optimistic-${now}-${Math.random().toString(36).substring(2, 9)}`;
+      const now = Math.max((messages[messages.length - 1]?.createdAt || 0) + 1, 1);
+      const tempId = `optimistic-${globalThis.crypto?.randomUUID?.() || `${clientId}-${now}`}`;
       const optimisticMessage: Message = {
         id: tempId,
         nickname,
