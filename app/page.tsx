@@ -22,7 +22,8 @@ import {
   Search,
   ExternalLink,
   AudioLines,
-  Plus
+  Plus,
+  LogOut
 } from 'lucide-react';
 import { useSocketState } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -302,7 +303,14 @@ export default function Home() {
     soundEnabled,
     toggleSoundEnabled,
     isScrolledUp,
-    setIsScrolledUp
+    setIsScrolledUp,
+    activeRoom,
+    roomJoinError,
+    isJoiningRoom,
+    createRoom,
+    joinRoom,
+    exitRoom,
+    clearRoomError
   } = useSocketState();
 
   const { theme, toggleTheme } = useTheme();
@@ -317,6 +325,7 @@ export default function Home() {
   const [memeError, setMemeError] = useState<string | null>(null);
   const [isTypingLocal, setIsTypingLocal] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [joinRoomKey, setJoinRoomKey] = useState('');
   const [cooldownLeft, setCooldownLeft] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   // PWA install prompt
@@ -428,6 +437,19 @@ export default function Home() {
     // Seamlessly prompt for push notifications on first real interaction
     if (isPushSupported && !pushSubscription && permission === 'default') {
       subscribePush();
+    }
+  };
+
+  const handleCreateRoom = () => {
+    clearRoomError();
+    createRoom();
+  };
+
+  const handleJoinRoom = async () => {
+    clearRoomError();
+    const success = await joinRoom(joinRoomKey);
+    if (success) {
+      setJoinRoomKey('');
     }
   };
 
@@ -684,7 +706,7 @@ export default function Home() {
 
     return grouped.map((group) => {
       const isSelf = group.nickname === nickname;
-      
+
       return (
         <motion.div
           key={group.id}
@@ -725,6 +747,57 @@ export default function Home() {
     });
   };
 
+  if (!activeRoom) {
+    return (
+      <div style={{ height: viewportHeight }} className="flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4">
+        <div className="w-full max-w-md rounded-3xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 p-5 shadow-xl space-y-4">
+          <div className="space-y-1">
+            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Choose your chat room</h1>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Create a private room or join one using a 4-digit key.</p>
+          </div>
+
+          <button
+            onClick={handleCreateRoom}
+            disabled={isJoiningRoom}
+            className="w-full rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-zinc-300 dark:disabled:bg-zinc-700 text-white text-sm font-semibold py-2.5 transition-colors"
+          >
+            {isJoiningRoom ? 'Creating...' : 'Create Room'}
+          </button>
+
+          <div className="relative text-center text-[10px] uppercase tracking-wider text-zinc-400">
+            <span className="bg-white dark:bg-zinc-900 px-2 relative z-10">or</span>
+            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-zinc-200/80 dark:border-zinc-800/80" />
+          </div>
+
+          <div className="space-y-2">
+            <input
+              value={joinRoomKey}
+              onChange={(e) => setJoinRoomKey(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="Enter 4-digit room key"
+              aria-label="Room key"
+              aria-invalid={Boolean(roomJoinError)}
+              aria-describedby={roomJoinError ? 'room-join-error' : undefined}
+              className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm font-mono tracking-[0.2em] text-center outline-none focus:border-violet-500"
+            />
+            <button
+              onClick={handleJoinRoom}
+              disabled={joinRoomKey.length !== 4 || isJoiningRoom}
+              className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-100 text-sm font-semibold py-2.5 transition-colors"
+            >
+              {isJoiningRoom ? 'Joining...' : 'Join Room'}
+            </button>
+          </div>
+
+          {roomJoinError && (
+            <p id="room-join-error" className="text-xs text-red-500 text-center">{roomJoinError}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const currentRoom = activeRoom;
+
   return (
     <>
       <div 
@@ -746,6 +819,9 @@ export default function Home() {
             </div>
             <span className="font-display font-bold text-base tracking-tight text-zinc-900 dark:text-zinc-50 hidden xs:inline-block">
               Wisp
+            </span>
+            <span className="inline-flex items-center rounded-full border border-violet-200/70 dark:border-violet-800/60 px-2 py-0.5 text-[10px] font-mono text-violet-600 dark:text-violet-300 bg-violet-50/80 dark:bg-violet-900/20 max-w-[140px] truncate">
+              {currentRoom.name} · #{currentRoom.key}
             </span>
           </div>
 
@@ -792,6 +868,15 @@ export default function Home() {
             </div>
 
             {/* Toggle sound effects */}
+            <button
+             onClick={exitRoom}
+             className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-800 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
+             aria-label="Exit room"
+             title="Exit room"
+            >
+             <LogOut className="h-3.5 w-3.5" />
+            </button>
+
             <button
               id="sound_switch"
               onClick={toggleSoundEnabled}
@@ -888,7 +973,7 @@ export default function Home() {
                   Aligning Quantum Portals
                 </h3>
                 <p className="text-xs text-ghost-light-sec dark:text-ghost-dark-sec leading-relaxed">
-                  Connecting to the secure single room. Establishing socket pipeline, preparing your temporary memory sandbox.
+                  Connecting to room #{currentRoom.key}. Establishing socket pipeline, preparing your temporary memory sandbox.
                 </p>
               </div>
             </motion.div>

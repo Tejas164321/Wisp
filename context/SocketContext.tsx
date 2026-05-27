@@ -3,7 +3,8 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { generateNickname } from '@/lib/nickname';
-import type { MemeAudio, Message, MessageType } from '@/lib/message-types';
+import { generateRoom, isValidRoomKey } from '@/lib/room-utils';
+import type { ChatRoom, MemeAudio, Message, MessageType } from '@/lib/message-types';
 
 export type { Message } from '@/lib/message-types';
 
@@ -20,6 +21,13 @@ interface SocketContextType {
   onlineCount: number;
   messages: Message[];
   typingUsers: string[];
+  activeRoom: ChatRoom | null;
+  roomJoinError: string | null;
+  isJoiningRoom: boolean;
+  createRoom: () => ChatRoom;
+  joinRoom: (roomKey: string) => Promise<boolean>;
+  exitRoom: () => void;
+  clearRoomError: () => void;
   sendMessage: (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => void;
   sendTypingStatus: (isTyping: boolean) => void;
   error: string | null;
@@ -31,6 +39,7 @@ interface SocketContextType {
   setIsScrolledUp: (val: boolean) => void;
 }
 
+const ACTIVE_ROOM_STORAGE_KEY = 'ghostroom_active_room';
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
@@ -46,12 +55,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isScrolledUp, setIsScrolledUp] = useState<boolean>(false);
-  
-  // Track typing timeout to clear status client side after inactivity
+  const [activeRoom, setActiveRoom] = useState<ChatRoom | null>(null);
+  const [roomJoinError, setRoomJoinError] = useState<string | null>(null);
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
+
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isCurrentlyTypingRef = useRef(false);
+  const pendingJoinResolverRef = useRef<((ok: boolean) => void) | null>(null);
+  const pendingJoinRoomRef = useRef<ChatRoom | null>(null);
+  const joinedRoomKeyRef = useRef<string | null>(null);
 
-  // Keep state variables fresh in stale socket event closure
   const soundEnabledRef = useRef(soundEnabled);
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -67,7 +80,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     isScrolledUpRef.current = isScrolledUp;
   }, [isScrolledUp]);
 
-  // Lazy load audio utility properties to avoid server-side render mismatch
+  const activeRoomRef = useRef<ChatRoom | null>(activeRoom);
+  useEffect(() => {
+    activeRoomRef.current = activeRoom;
+  }, [activeRoom]);
+
   const audioRef = useRef<{
     playReceiveSound: () => void;
     playSendSound: () => void;
@@ -81,46 +98,57 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // 1. Update nickname and clientId post-hydrate
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      let storedNickname = localStorage.getItem('ghostroom_nickname');
-      if (!storedNickname) {
-        storedNickname = generateNickname();
-        localStorage.setItem('ghostroom_nickname', storedNickname);
-      }
-      const finalNickname = storedNickname;
-      setTimeout(() => {
-        setNickname(finalNickname);
-      }, 0);
+    if (typeof window === 'undefined') return;
 
-      let storedClientId = localStorage.getItem('ghostroom_client_id');
-      if (!storedClientId) {
-        storedClientId = 'client-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-        localStorage.setItem('ghostroom_client_id', storedClientId);
-      }
+    let storedNickname = localStorage.getItem('ghostroom_nickname');
+    if (!storedNickname) {
+      storedNickname = generateNickname();
+      localStorage.setItem('ghostroom_nickname', storedNickname);
+    }
+    setTimeout(() => {
+      setNickname(storedNickname);
+    }, 0);
+
+    let storedClientId = localStorage.getItem('ghostroom_client_id');
+    if (!storedClientId) {
+      storedClientId = `client-${Math.random().toString(36).substring(2, 15)}${Date.now().toString(36)}`;
+      localStorage.setItem('ghostroom_client_id', storedClientId);
+    }
+    setTimeout(() => {
       setClientId(storedClientId);
+    }, 0);
+
+    const storedRoomRaw = localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
+    if (storedRoomRaw) {
+      try {
+        const parsed = JSON.parse(storedRoomRaw) as ChatRoom;
+        if (parsed?.key && parsed?.name && isValidRoomKey(parsed.key)) {
+          setTimeout(() => {
+            setActiveRoom({ key: parsed.key, name: parsed.name });
+          }, 0);
+        } else {
+          localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+      }
     }
   }, []);
 
-  // 2. Initialise Socket IO Client connection on mount
   useEffect(() => {
-    // Socket.IO client auto-resolves to current browser window host
     const socketClient = io({
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 3,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 3000, // Short timeout for faster fallback to polling on Vercel
-      transports: ['websocket'], // Crucial for multi-replica Cloud Run deployments to bypass session stickiness issues on HTTP polling
+      timeout: 3000,
+      transports: ['websocket'],
     });
 
     let fallbackTimeout: NodeJS.Timeout;
-
-    // Fall back to polling mode if socket fails to connect in 2.5 seconds
     fallbackTimeout = setTimeout(() => {
-      console.log('🔌 Socket connection timed out. Falling back to HTTP polling mode.');
       setIsPollingMode(true);
     }, 2500);
 
@@ -129,13 +157,48 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setIsSocketConnected(true);
       setIsPollingMode(false);
       setError(null);
-      console.log('🤖 Real-time chat connected to sanctuary.');
+      const room = activeRoomRef.current;
+      if (room) {
+        socketClient.emit('join_room', { roomKey: room.key, roomName: room.name });
+      }
+    });
+
+    socketClient.on('room_required', () => {
+      const room = activeRoomRef.current;
+      if (room) {
+        socketClient.emit('join_room', { roomKey: room.key, roomName: room.name });
+      }
+    });
+
+    socketClient.on('room_joined', (room: ChatRoom) => {
+      joinedRoomKeyRef.current = room.key;
+      setActiveRoom(room);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
+      }
+      setRoomJoinError(null);
+      setIsJoiningRoom(false);
+      setMessages([]);
+      if (pendingJoinResolverRef.current) {
+        pendingJoinResolverRef.current(true);
+        pendingJoinResolverRef.current = null;
+        pendingJoinRoomRef.current = null;
+      }
+    });
+
+    socketClient.on('room_join_failed', (payload: { reason?: string }) => {
+      joinedRoomKeyRef.current = null;
+      setIsJoiningRoom(false);
+      setRoomJoinError(payload?.reason || 'Unable to join this room.');
+      if (pendingJoinResolverRef.current) {
+        pendingJoinResolverRef.current(false);
+        pendingJoinResolverRef.current = null;
+      }
+      pendingJoinRoomRef.current = null;
     });
 
     socketClient.on('disconnect', () => {
       setIsSocketConnected(false);
-      console.warn('⚠️ Disconnected from the sanctuary, seeking visual re-attachment...');
-      // Start polling fallback immediately on disconnect
       setIsPollingMode(true);
     });
 
@@ -146,16 +209,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socketClient.on('history', (historyMessages: Message[]) => {
       setMessages(historyMessages);
+      setTypingUsers([]);
     });
 
     socketClient.on('message', (newMsg: Message) => {
+      if (!activeRoomRef.current) return;
+      if (!newMsg.roomKey || newMsg.roomKey !== activeRoomRef.current.key) return;
       setMessages((prev) => {
-        // Prevent duplicate append for idempotency
         if (prev.some((m) => m.id === newMsg.id)) {
           return prev;
         }
 
-        // Play subtle sound alert + haptic vibe if received from others
         if (newMsg.nickname !== nicknameRef.current) {
           if (soundEnabledRef.current && audioRef.current) {
             if (isScrolledUpRef.current) {
@@ -190,56 +254,52 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       if (data.nickname) {
         setTypingUsers((prev) => prev.filter((name) => name !== data.nickname));
       } else {
-        // Disconnect catch-all, trigger simple aging out
         setTypingUsers([]);
       }
     });
 
     socketClient.on('error', (errMessage: string) => {
       setError(errMessage);
-      // Automatically dismiss socket errors after 4 seconds
       setTimeout(() => {
-        setError((current) => current === errMessage ? null : current);
+        setError((current) => (current === errMessage ? null : current));
       }, 4000);
     });
 
-    setTimeout(() => {
-      setSocket(socketClient);
-    }, 0);
-
+    setSocket(socketClient);
     return () => {
       clearTimeout(fallbackTimeout);
       socketClient.disconnect();
     };
   }, []);
 
-  // 3. Polling loop fallback when Socket.io is unavailable (e.g. on Vercel serverless)
   useEffect(() => {
-    if (!isPollingMode || !nickname || !clientId) return;
+    if (!socket || !isSocketConnected || !activeRoom) return;
+    if (joinedRoomKeyRef.current === activeRoom.key) return;
+    socket.emit('join_room', { roomKey: activeRoom.key, roomName: activeRoom.name });
+  }, [socket, isSocketConnected, activeRoom]);
+
+  useEffect(() => {
+    if (!isPollingMode || !nickname || !clientId || !activeRoom) return;
 
     const fetchPoll = async () => {
       try {
-        const res = await fetch(`/api/messages?nickname=${encodeURIComponent(nickname)}&clientId=${encodeURIComponent(clientId)}`);
+        const res = await fetch(
+          `/api/messages?nickname=${encodeURIComponent(nickname)}&clientId=${encodeURIComponent(clientId)}&roomKey=${encodeURIComponent(activeRoom.key)}`
+        );
         if (res.ok) {
           const data = await res.json();
           if (data.messages) {
             setMessages((prev) => {
-              // Extract any optimistic messages currently in the local state
               const optimisticMsgs = prev.filter((m) => m.id.startsWith('optimistic-'));
-              
-              // Filter out optimistic messages that have been confirmed by the server response
               const pendingOptimistics = optimisticMsgs.filter((opt) => {
-                const isConfirmed = data.messages.some((m: Message) => 
-                  m.nickname === opt.nickname &&
-                  m.text === opt.text &&
-                  Math.abs(m.createdAt - opt.createdAt) < 15000
+                const isConfirmed = data.messages.some(
+                  (m: Message) => m.nickname === opt.nickname && m.text === opt.text && Math.abs(m.createdAt - opt.createdAt) < 15000
                 );
                 return !isConfirmed;
               });
-              
-              // Check for new incoming messages from other users to trigger audio/haptics
-              const newIncoming = data.messages.filter((m: Message) => 
-                !prev.some((p) => p.id === m.id) && m.nickname !== nicknameRef.current
+
+              const newIncoming = data.messages.filter(
+                (m: Message) => !prev.some((p) => p.id === m.id) && m.nickname !== nicknameRef.current
               );
 
               if (newIncoming.length > 0) {
@@ -255,7 +315,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
                 }
               }
 
-              // Merge server messages with pending optimistic ones
               return [...data.messages, ...pendingOptimistics];
             });
           }
@@ -269,30 +328,107 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     };
 
     fetchPoll();
-
     const interval = setInterval(fetchPoll, 3000);
+    return () => clearInterval(interval);
+  }, [isPollingMode, nickname, clientId, activeRoom]);
 
-    return () => {
-      clearInterval(interval);
-    };
-  }, [isPollingMode, nickname, clientId]);
+  const clearRoomError = () => setRoomJoinError(null);
 
-  // Actions
+  const createRoom = (): ChatRoom => {
+    const room = generateRoom();
+    setMessages([]);
+    setTypingUsers([]);
+    setOnlineCount(1);
+    setIsJoiningRoom(true);
+    setRoomJoinError(null);
+    pendingJoinRoomRef.current = room;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
+    }
+    setActiveRoom(room);
+    if (socket && isSocketConnected) {
+      joinedRoomKeyRef.current = null;
+      socket.emit('join_room', { roomKey: room.key, roomName: room.name });
+    } else {
+      setIsJoiningRoom(false);
+    }
+    return room;
+  };
+
+  const joinRoom = async (roomKeyInput: string): Promise<boolean> => {
+    const key = roomKeyInput.trim();
+    if (!isValidRoomKey(key)) {
+      setRoomJoinError('Room key must be exactly 4 digits.');
+      return false;
+    }
+
+    setMessages([]);
+    setTypingUsers([]);
+    setOnlineCount(1);
+    setIsJoiningRoom(true);
+    setRoomJoinError(null);
+    const room: ChatRoom = { key, name: pendingJoinRoomRef.current?.name || `Room-${key}` };
+
+    if (socket && isSocketConnected) {
+      return new Promise((resolve) => {
+        pendingJoinResolverRef.current = resolve;
+        pendingJoinRoomRef.current = room;
+        joinedRoomKeyRef.current = null;
+        socket.emit('join_room', { roomKey: key });
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
+    }
+    setActiveRoom(room);
+    setIsJoiningRoom(false);
+    return true;
+  };
+
+  const exitRoom = () => {
+    if (socket && isSocketConnected) {
+      socket.emit('leave_room');
+    }
+    joinedRoomKeyRef.current = null;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+    }
+    setActiveRoom(null);
+    setMessages([]);
+    setTypingUsers([]);
+    setOnlineCount(1);
+    setRoomJoinError(null);
+    setIsJoiningRoom(false);
+    if (pendingJoinResolverRef.current) {
+      pendingJoinResolverRef.current(false);
+      pendingJoinResolverRef.current = null;
+    }
+    pendingJoinRoomRef.current = null;
+  };
+
   const sendMessage = async (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => {
+    if (!activeRoom) {
+      setError('Create or join a room first.');
+      return;
+    }
+
     const messageType: MessageType = payload.type || (payload.memeAudio ? 'meme_audio' : 'text');
-    const outgoingText =
-      payload.text || payload.memeAudio?.title || (messageType === 'meme_audio' ? 'Meme sound' : '');
+    const outgoingText = payload.text || payload.memeAudio?.title || (messageType === 'meme_audio' ? 'Meme sound' : '');
     if (messageType === 'text' && !outgoingText.trim()) {
       setError('Cannot whisper empty voids.');
       return;
     }
+
     if (isPollingMode) {
-      const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const now = Math.max((messages[messages.length - 1]?.createdAt || 0) + 1, 1);
+      const tempId = `optimistic-${globalThis.crypto?.randomUUID?.() || `${clientId}-${now}`}`;
       const optimisticMessage: Message = {
         id: tempId,
         nickname,
         text: outgoingText,
-        createdAt: Date.now(),
+        createdAt: now,
+        roomKey: activeRoom.key,
         replyToId: replyTo?.id,
         replyToNickname: replyTo?.nickname,
         replyToText: replyTo?.text,
@@ -300,7 +436,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         memeAudio: payload.memeAudio,
       };
 
-      // Play sound + haptic immediately for responsive feedback
       if (soundEnabledRef.current && audioRef.current) {
         audioRef.current.playSendSound();
       }
@@ -308,7 +443,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         audioRef.current.triggerHaptic('success');
       }
 
-      // Append locally immediately
       setMessages((prev) => [...prev, optimisticMessage]);
 
       try {
@@ -317,12 +451,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ 
-            nickname, 
+          body: JSON.stringify({
+            nickname,
             text: outgoingText,
             type: messageType,
             memeAudio: payload.memeAudio,
             clientId,
+            roomKey: activeRoom.key,
             replyToId: replyTo?.id,
             replyToNickname: replyTo?.nickname,
             replyToText: replyTo?.text,
@@ -332,40 +467,35 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) {
           const data = await res.json();
           setError(data.error || 'A spatial anomaly occurred. Whisper failed.');
-          // Remove the optimistic message on failure
           setMessages((prev) => prev.filter((m) => m.id !== tempId));
           return;
         }
 
         const data = await res.json();
         if (data.success && data.message) {
-          // Replace the optimistic message with the official server message
-          setMessages((prev) => 
-            prev.map((m) => m.id === tempId ? data.message : m)
-          );
+          setMessages((prev) => prev.map((m) => (m.id === tempId ? data.message : m)));
         }
       } catch (err) {
         console.error('Failed to send message in polling mode:', err);
         setError('Connection interrupted. Unable to reach a spatial gateway.');
-        // Remove the optimistic message on failure
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
       return;
     }
 
     if (socket && isSocketConnected) {
-      socket.emit('message', { 
-        nickname, 
+      socket.emit('message', {
+        nickname,
         text: outgoingText,
         type: messageType,
         memeAudio: payload.memeAudio,
         clientId,
+        roomKey: activeRoom.key,
         replyToId: replyTo?.id,
         replyToNickname: replyTo?.nickname,
         replyToText: replyTo?.text,
       });
-      
-      // Trigger soft send chime + subtle haptic vibration
+
       if (soundEnabledRef.current && audioRef.current) {
         audioRef.current.playSendSound();
       }
@@ -373,7 +503,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         audioRef.current.triggerHaptic('success');
       }
 
-      // Stop typing status instantly upon send
       sendTypingStatus(false);
     } else {
       setError('Connection interrupted. Unable to reach a spatial gateway.');
@@ -381,30 +510,27 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   };
 
   const sendTypingStatus = (isTyping: boolean) => {
-    if (isPollingMode) return; // Typing status not supported/needed in polling mode
+    if (!activeRoom) return;
+    if (isPollingMode) return;
     if (!socket || !isSocketConnected) return;
 
-    // Guard to avoid spamming typing events unnecessarily
     if (isCurrentlyTypingRef.current === isTyping) return;
     isCurrentlyTypingRef.current = isTyping;
 
     if (isTyping) {
-      socket.emit('typing', { nickname });
+      socket.emit('typing', { nickname, roomKey: activeRoom.key });
     } else {
-      socket.emit('stop_typing', { nickname });
+      socket.emit('stop_typing', { nickname, roomKey: activeRoom.key });
     }
 
-    // Handle typing indicator expiration
     if (isTyping) {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         sendTypingStatus(false);
-      }, 4000); // Expiry target indicator
-    } else {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
+      }, 4000);
+    } else if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
     }
   };
 
@@ -418,19 +544,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem('ghostroom_nickname', freshNickname);
     }
-    
-    // Notify server of typing state swap (clearing typing reference)
+
     if (socket && isSocketConnected) {
       socket.emit('stop_typing', { nickname: oldNickname });
     }
-    
+
     setNickname(freshNickname);
   };
 
   const toggleSoundEnabled = () => {
     setSoundEnabled((prev) => {
       const nextVal = !prev;
-      // Double tap vibration feedback upon configuration toggle
       if (audioRef.current) {
         audioRef.current.triggerHaptic('double');
       }
@@ -447,6 +571,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         onlineCount,
         messages,
         typingUsers,
+        activeRoom,
+        roomJoinError,
+        isJoiningRoom,
+        createRoom,
+        joinRoom,
+        exitRoom,
+        clearRoomError,
         sendMessage,
         sendTypingStatus,
         error,
