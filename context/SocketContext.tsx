@@ -22,10 +22,12 @@ interface SocketContextType {
   messages: Message[];
   typingUsers: string[];
   activeRoom: ChatRoom | null;
+  joinedRooms: ChatRoom[];
   roomJoinError: string | null;
   isJoiningRoom: boolean;
   createRoom: () => ChatRoom;
-  joinRoom: (roomKey: string) => Promise<boolean>;
+  joinRoom: (roomKey: string, roomNameHint?: string) => Promise<boolean>;
+  switchRoom: (roomKey: string) => Promise<boolean>;
   exitRoom: () => void;
   clearRoomError: () => void;
   sendMessage: (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => void;
@@ -40,6 +42,7 @@ interface SocketContextType {
 }
 
 const ACTIVE_ROOM_STORAGE_KEY = 'ghostroom_active_room';
+const JOINED_ROOMS_STORAGE_KEY = 'ghostroom_joined_rooms';
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
@@ -56,6 +59,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isScrolledUp, setIsScrolledUp] = useState<boolean>(false);
   const [activeRoom, setActiveRoom] = useState<ChatRoom | null>(null);
+  const [joinedRooms, setJoinedRooms] = useState<ChatRoom[]>([]);
   const [roomJoinError, setRoomJoinError] = useState<string | null>(null);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
 
@@ -84,6 +88,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     activeRoomRef.current = activeRoom;
   }, [activeRoom]);
+
+  const joinedRoomsRef = useRef<ChatRoom[]>(joinedRooms);
+  useEffect(() => {
+    joinedRoomsRef.current = joinedRooms;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(JOINED_ROOMS_STORAGE_KEY, JSON.stringify(joinedRooms));
+    }
+  }, [joinedRooms]);
 
   const audioRef = useRef<{
     playReceiveSound: () => void;
@@ -119,11 +131,30 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setClientId(storedClientId);
     }, 0);
 
+    const storedRoomsRaw = localStorage.getItem(JOINED_ROOMS_STORAGE_KEY);
+    let storedRooms: ChatRoom[] = [];
+    if (storedRoomsRaw) {
+      try {
+        const parsedRooms = JSON.parse(storedRoomsRaw);
+        if (Array.isArray(parsedRooms)) {
+          storedRooms = parsedRooms
+            .filter((room): room is ChatRoom => Boolean(room?.key && room?.name && isValidRoomKey(room.key)))
+            .slice(0, 20);
+          setJoinedRooms(storedRooms);
+        }
+      } catch {
+        localStorage.removeItem(JOINED_ROOMS_STORAGE_KEY);
+      }
+    }
+
     const storedRoomRaw = localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
     if (storedRoomRaw) {
       try {
         const parsed = JSON.parse(storedRoomRaw) as ChatRoom;
         if (parsed?.key && parsed?.name && isValidRoomKey(parsed.key)) {
+          if (!storedRooms.some((room) => room.key === parsed.key)) {
+            setJoinedRooms((prev) => [parsed, ...prev].slice(0, 20));
+          }
           setTimeout(() => {
             setActiveRoom({ key: parsed.key, name: parsed.name });
           }, 0);
@@ -173,6 +204,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketClient.on('room_joined', (room: ChatRoom) => {
       joinedRoomKeyRef.current = room.key;
       setActiveRoom(room);
+      rememberRoom(room);
       if (typeof window !== 'undefined') {
         localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
       }
@@ -334,6 +366,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   const clearRoomError = () => setRoomJoinError(null);
 
+  const rememberRoom = (room: ChatRoom) => {
+    setJoinedRooms((prev) => {
+      const next = [room, ...prev.filter((item) => item.key !== room.key)];
+      return next.slice(0, 20);
+    });
+  };
+
   const createRoom = (): ChatRoom => {
     const room = generateRoom();
     setMessages([]);
@@ -345,6 +384,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
     }
+    rememberRoom(room);
     setActiveRoom(room);
     if (socket && isSocketConnected) {
       joinedRoomKeyRef.current = null;
@@ -355,7 +395,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return room;
   };
 
-  const joinRoom = async (roomKeyInput: string): Promise<boolean> => {
+  const joinRoom = async (roomKeyInput: string, roomNameHint?: string): Promise<boolean> => {
     const key = roomKeyInput.trim();
     if (!isValidRoomKey(key)) {
       setRoomJoinError('Room key must be exactly 4 digits.');
@@ -367,7 +407,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     setOnlineCount(1);
     setIsJoiningRoom(true);
     setRoomJoinError(null);
-    const room: ChatRoom = { key, name: pendingJoinRoomRef.current?.name || `Room-${key}` };
+    const existingRoom = joinedRoomsRef.current.find((item) => item.key === key);
+    const room: ChatRoom = {
+      key,
+      name: roomNameHint || existingRoom?.name || pendingJoinRoomRef.current?.name || `Room-${key}`,
+    };
 
     if (socket && isSocketConnected) {
       return new Promise((resolve) => {
@@ -381,9 +425,22 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
     }
+    rememberRoom(room);
     setActiveRoom(room);
     setIsJoiningRoom(false);
     return true;
+  };
+
+  const switchRoom = async (roomKey: string): Promise<boolean> => {
+    const targetRoom = joinedRoomsRef.current.find((room) => room.key === roomKey);
+    if (!targetRoom) {
+      setRoomJoinError('Room not found in your recent rooms.');
+      return false;
+    }
+    if (activeRoomRef.current?.key === targetRoom.key) {
+      return true;
+    }
+    return joinRoom(targetRoom.key, targetRoom.name);
   };
 
   const exitRoom = () => {
@@ -572,10 +629,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         messages,
         typingUsers,
         activeRoom,
+        joinedRooms,
         roomJoinError,
         isJoiningRoom,
         createRoom,
         joinRoom,
+        switchRoom,
         exitRoom,
         clearRoomError,
         sendMessage,
