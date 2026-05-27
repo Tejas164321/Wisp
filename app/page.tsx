@@ -305,10 +305,12 @@ export default function Home() {
     isScrolledUp,
     setIsScrolledUp,
     activeRoom,
+    joinedRooms,
     roomJoinError,
     isJoiningRoom,
     createRoom,
     joinRoom,
+    switchRoom,
     exitRoom,
     clearRoomError
   } = useSocketState();
@@ -453,6 +455,11 @@ export default function Home() {
     }
   };
 
+  const handleSwitchRoom = async (roomKey: string) => {
+    clearRoomError();
+    await switchRoom(roomKey);
+  };
+
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (scrollContainerRef.current) {
       const { scrollHeight, clientHeight } = scrollContainerRef.current;
@@ -503,8 +510,8 @@ export default function Home() {
         // If sent by ourselves, always scroll to bottom immediately and clear unreads
         const timer = setTimeout(() => {
           scrollToBottom('smooth');
+          setUnreadCount(0);
         }, 50);
-        setUnreadCount(0);
         return () => clearTimeout(timer);
       } else {
         // Sent by someone else
@@ -515,8 +522,8 @@ export default function Home() {
           // At the bottom: auto scroll
           const timer = setTimeout(() => {
             scrollToBottom('smooth');
+            setUnreadCount(0);
           }, 50);
-          setUnreadCount(0);
           return () => clearTimeout(timer);
         }
       }
@@ -809,27 +816,27 @@ export default function Home() {
       <div className="mx-auto flex flex-col h-full w-full max-w-3xl relative px-4 sm:px-4">
 
       {/* 1. Header Navigation Bar (Dynamic Island Capsule shape) */}
-      <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-full border border-zinc-200/50 dark:border-zinc-900 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shadow-md select-none transition-all shrink-0">
-        <div className="flex h-14 w-full items-center justify-between px-4 gap-2">
+      <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl sm:rounded-full border border-zinc-200/50 dark:border-zinc-900 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shadow-md select-none transition-all shrink-0">
+        <div className="flex w-full flex-wrap items-center gap-2 px-3 py-2 sm:h-14 sm:flex-nowrap sm:px-4">
           
           {/* Brand Logo */}
-          <div className="flex items-center space-x-2.5 shrink-0 select-none">
+          <div className="flex min-w-0 items-center space-x-2 shrink-0 select-none">
             <div className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50">
               <Ghost className="h-5 w-5 text-violet-600 dark:text-violet-400" />
             </div>
             <span className="font-display font-bold text-base tracking-tight text-zinc-900 dark:text-zinc-50 hidden xs:inline-block">
               Wisp
             </span>
-            <span className="inline-flex items-center rounded-full border border-violet-200/70 dark:border-violet-800/60 px-2 py-0.5 text-[10px] font-mono text-violet-600 dark:text-violet-300 bg-violet-50/80 dark:bg-violet-900/20 max-w-[140px] truncate">
+            <span className="inline-flex min-w-0 items-center rounded-full border border-violet-200/70 dark:border-violet-800/60 px-2 py-0.5 text-[10px] font-mono text-violet-600 dark:text-violet-300 bg-violet-50/80 dark:bg-violet-900/20 max-w-[120px] xs:max-w-[160px] truncate">
               {currentRoom.name} · #{currentRoom.key}
             </span>
           </div>
 
           {/* User identity badge (Consolidated inline to prevent header splitting) */}
-          <div className="flex items-center space-x-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-2.5 py-1 text-xs select-none shadow-inner min-w-0">
+          <div className="order-3 sm:order-none flex w-full sm:w-auto min-w-0 items-center space-x-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-2.5 py-1 text-xs select-none shadow-inner">
             <Sparkle className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400 animate-pulse-slow shrink-0" />
             <span className="text-[10px] font-mono text-zinc-400 hidden sm:inline shrink-0">Handle:</span>
-            <span className="font-mono font-bold text-violet-600 dark:text-violet-400 truncate max-w-[80px] xs:max-w-[100px] sm:max-w-none">
+            <span className="font-mono font-bold text-violet-600 dark:text-violet-400 truncate max-w-[120px] sm:max-w-none">
               {nickname || 'Resolving...'}
             </span>
             <button
@@ -842,9 +849,9 @@ export default function Home() {
           </div>
 
           {/* Right toggle panel */}
-          <div className="flex items-center space-x-2 shrink-0">
+          <div className="ml-auto order-2 sm:order-none flex items-center space-x-1.5 shrink-0">
             {/* Global Network / Online status */}
-            <div className="flex items-center space-x-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 px-2.5 py-0.5 text-xs text-zinc-600 dark:text-zinc-400 shadow-sm backdrop-blur-sm">
+            <div className="hidden xs:flex items-center space-x-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 px-2.5 py-0.5 text-xs text-zinc-600 dark:text-zinc-400 shadow-sm backdrop-blur-sm">
               <span className="relative flex h-1.5 w-1.5 mr-0.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
@@ -908,6 +915,57 @@ export default function Home() {
 
         </div>
       </header>
+
+      <div className="mx-auto w-full max-w-2xl mb-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/85 dark:bg-zinc-900/70 px-2.5 py-2 backdrop-blur-sm">
+          <button
+            onClick={handleCreateRoom}
+            disabled={isJoiningRoom}
+            className="flex h-8 items-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 disabled:opacity-60 transition-colors"
+            title="Create a new room"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            <input
+              value={joinRoomKey}
+              onChange={(e) => setJoinRoomKey(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="0000"
+              aria-label="Join room key"
+              className="h-8 w-20 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 text-[11px] font-mono tracking-[0.22em] text-center outline-none focus:border-violet-500"
+            />
+            <button
+              onClick={handleJoinRoom}
+              disabled={joinRoomKey.length !== 4 || isJoiningRoom}
+              className="h-8 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 disabled:opacity-60 transition-colors"
+            >
+              Join
+            </button>
+          </div>
+
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-0.5">
+            {joinedRooms.map((room) => (
+              <button
+                key={room.key}
+                onClick={() => handleSwitchRoom(room.key)}
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-mono transition-colors ${
+                  room.key === currentRoom.key
+                    ? 'border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
+                    : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                }`}
+                title={`${room.name} (#${room.key})`}
+              >
+                {room.name} · #{room.key}
+              </button>
+            ))}
+          </div>
+        </div>
+        {roomJoinError && (
+          <p className="mt-1 text-xs text-red-500 px-1">{roomJoinError}</p>
+        )}
+      </div>
 
       {/* PWA Install Banner */}
       <AnimatePresence>
