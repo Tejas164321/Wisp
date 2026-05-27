@@ -18,9 +18,15 @@ export interface Message {
   nickname: string;
   text: string;
   createdAt: number;
+  roomKey?: string;
   replyToId?: string;
   replyToNickname?: string;
   replyToText?: string;
   type?: MessageType;
   memeAudio?: MemeAudio;
+}
+
+export interface ChatRoom {
+  key: string;
+  name: string;
 }

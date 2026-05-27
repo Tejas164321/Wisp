@@ -1,12 +1,29 @@
 import { Redis } from '@upstash/redis';
-import type { Message } from './message-types';
+import type { ChatRoom, Message } from './message-types';
 
 let redisClient: Redis | null = null;
 
-// Simple in-memory fallback cache that expires objects based on timestamps.
-let memoryMessages: Message[] = [];
+const ROOM_TTL_SECONDS = 24 * 60 * 60;
+const MESSAGE_TTL_SECONDS = 3 * 60 * 60;
+const ROOM_MESSAGE_LIMIT = 200;
+
+// In-memory fallback cache keyed by room key.
+const memoryMessagesByRoom = new Map<string, Message[]>();
+const memoryRooms = new Map<string, ChatRoom>();
 // In-memory push subscriptions fallback
 const memorySubscriptions: Record<string, any> = {};
+
+function roomDataKey(roomKey: string): string {
+  return `ghostroom:room:${roomKey}`;
+}
+
+function roomMessageIdsKey(roomKey: string): string {
+  return `ghostroom:${roomKey}:message_ids`;
+}
+
+function roomMessageKey(roomKey: string, messageId: string): string {
+  return `ghostroom:${roomKey}:message:${messageId}`;
+}
 
 /**
  * Lazy initializer for the Redis client.
@@ -17,7 +34,6 @@ export function getRedis(): Redis | null {
   let url = process.env.UPSTASH_REDIS_REST_URL;
   let token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-  // Clean ambient quotes if parsed literally from the environment configuration
   if (url) {
     url = url.trim().replace(/^['"]|['"]$/g, '').trim();
   }
@@ -45,52 +61,86 @@ export function getRedis(): Redis | null {
 
 export type { Message } from './message-types';
 
-/**
- * Save a message to Redis with a 3 hour TTL, or store in memory if Redis is absent.
- */
-export async function saveMessage(msg: Message): Promise<void> {
+export async function saveRoom(room: ChatRoom): Promise<void> {
+  const safeRoom: ChatRoom = { key: room.key.trim(), name: room.name.trim() };
+  if (!safeRoom.key) return;
+
   const redis = getRedis();
-  
   if (redis) {
     try {
-      // 1. Set individual key value with 3 hours (10800 seconds) expiration (TTL)
-      await redis.set(`ghostroom:message:${msg.id}`, JSON.stringify(msg), { ex: 10800 });
-      
-      // 2. LPUSH to index list
-      await redis.lpush('ghostroom:message_ids', msg.id);
-      
-      // 3. Trim index list to maximum 200 entries to prevent memory-waste
-      await redis.ltrim('ghostroom:message_ids', 0, 199);
+      await redis.set(roomDataKey(safeRoom.key), JSON.stringify(safeRoom), { ex: ROOM_TTL_SECONDS });
+      return;
     } catch (err) {
-      console.error('Failed to save message to Redis:', err);
-      saveToMemory(msg);
+      console.error('Failed to save room in Redis:', err);
     }
-  } else {
-    saveToMemory(msg);
   }
+
+  memoryRooms.set(safeRoom.key, safeRoom);
+}
+
+export async function fetchRoom(roomKey: string): Promise<ChatRoom | null> {
+  const safeKey = roomKey.trim();
+  if (!safeKey) return null;
+
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const roomData = await redis.get(roomDataKey(safeKey));
+      if (!roomData) return null;
+      const parsed = typeof roomData === 'string' ? JSON.parse(roomData) : roomData;
+      if (parsed?.key && parsed?.name) {
+        await redis.expire(roomDataKey(safeKey), ROOM_TTL_SECONDS);
+        return { key: String(parsed.key), name: String(parsed.name) };
+      }
+    } catch (err) {
+      console.error('Failed to fetch room in Redis:', err);
+    }
+  }
+
+  return memoryRooms.get(safeKey) || null;
 }
 
 /**
- * Retrieve current message history (under 3 hours old).
+ * Save a message in a room with a 3 hour TTL.
  */
-export async function fetchMessageHistory(): Promise<Message[]> {
+export async function saveMessage(msg: Message, roomKey: string): Promise<void> {
+  const safeRoomKey = roomKey.trim();
+  if (!safeRoomKey) return;
+
   const redis = getRedis();
-  const now = Date.now();
 
   if (redis) {
     try {
-      // 1. Get the list of message IDs
-      const messageIds: string[] = await redis.lrange('ghostroom:message_ids', 0, -1);
+      await redis.set(roomMessageKey(safeRoomKey, msg.id), JSON.stringify({ ...msg, roomKey: safeRoomKey }), {
+        ex: MESSAGE_TTL_SECONDS,
+      });
+      await redis.lpush(roomMessageIdsKey(safeRoomKey), msg.id);
+      await redis.ltrim(roomMessageIdsKey(safeRoomKey), 0, ROOM_MESSAGE_LIMIT - 1);
+      return;
+    } catch (err) {
+      console.error('Failed to save message to Redis:', err);
+    }
+  }
+
+  saveToMemory({ ...msg, roomKey: safeRoomKey }, safeRoomKey);
+}
+
+/**
+ * Retrieve room message history (under 3 hours old).
+ */
+export async function fetchMessageHistory(roomKey: string): Promise<Message[]> {
+  const safeRoomKey = roomKey.trim();
+  if (!safeRoomKey) return [];
+
+  const redis = getRedis();
+
+  if (redis) {
+    try {
+      const messageIds: string[] = await redis.lrange(roomMessageIdsKey(safeRoomKey), 0, -1);
       if (!messageIds || messageIds.length === 0) return [];
 
-      // 2. Query all of those individual messages
-      const fetched: any[] = [];
-      
-      // Upstash supports mget
-      const values = await redis.mget<string[]>(...messageIds.map(id => `ghostroom:message:${id}`));
-      
-      // Filter expired keys and construct response
-      const validIds: string[] = [];
+      const fetched: Message[] = [];
+      const values = await redis.mget<string[]>(...messageIds.map((id) => roomMessageKey(safeRoomKey, id)));
       const expiredIds: string[] = [];
 
       values.forEach((val, idx) => {
@@ -99,71 +149,64 @@ export async function fetchMessageHistory(): Promise<Message[]> {
           try {
             const msgObj = typeof val === 'string' ? JSON.parse(val) : val;
             fetched.push(msgObj);
-            validIds.push(id);
           } catch {
-            // Unparseable JSON, skip
+            expiredIds.push(id);
           }
         } else {
-          // Key expired! Keep track of it to clean from index list
           expiredIds.push(id);
         }
       });
 
-      // Cleanup: asynchronously remove expired message IDs from index list to keep space optimal
       if (expiredIds.length > 0) {
-        Promise.all(expiredIds.map(eid => redis.lrem('ghostroom:message_ids', 0, eid))).catch(err => {
+        Promise.all(expiredIds.map((id) => redis.lrem(roomMessageIdsKey(safeRoomKey), 0, id))).catch((err) => {
           console.warn('Failed to clean up expired ids from Redis list:', err);
         });
       }
 
-      // Return sorted from oldest to newest for chronological chat stream
       return fetched.sort((a, b) => a.createdAt - b.createdAt);
     } catch (err) {
       console.error('Failed to fetch message history from Redis:', err);
-      return getFromMemory();
     }
   }
 
-  return getFromMemory();
+  return getFromMemory(safeRoomKey);
 }
 
-// Memory managers
-function saveToMemory(msg: Message): void {
-  memoryMessages.push(msg);
-  cleanupMemory();
+function saveToMemory(msg: Message, roomKey: string): void {
+  const current = memoryMessagesByRoom.get(roomKey) || [];
+  current.push(msg);
+  memoryMessagesByRoom.set(roomKey, current);
+  cleanupMemory(roomKey);
 }
 
-function getFromMemory(): Message[] {
-  cleanupMemory();
-  // Return sorted chronologically
-  return [...memoryMessages].sort((a, b) => a.createdAt - b.createdAt);
+function getFromMemory(roomKey: string): Message[] {
+  cleanupMemory(roomKey);
+  return [...(memoryMessagesByRoom.get(roomKey) || [])].sort((a, b) => a.createdAt - b.createdAt);
 }
 
-function cleanupMemory(): void {
+function cleanupMemory(roomKey: string): void {
   const now = Date.now();
   const threeHoursInMillis = 3 * 60 * 60 * 1000;
-  // Expressive 3 hour TTL filtering
-  memoryMessages = memoryMessages.filter(msg => (now - msg.createdAt) < threeHoursInMillis);
-  // Cap list size
-  if (memoryMessages.length > 200) {
-    memoryMessages = memoryMessages.slice(memoryMessages.length - 200);
+  const filtered = (memoryMessagesByRoom.get(roomKey) || []).filter((msg) => now - msg.createdAt < threeHoursInMillis);
+  if (filtered.length > ROOM_MESSAGE_LIMIT) {
+    memoryMessagesByRoom.set(roomKey, filtered.slice(filtered.length - ROOM_MESSAGE_LIMIT));
+    return;
   }
+  memoryMessagesByRoom.set(roomKey, filtered);
 }
 
 // Push subscription managers
-
 export async function savePushSubscription(clientId: string, subscription: any): Promise<void> {
   const redis = getRedis();
   if (redis) {
     try {
       await redis.hset('ghostroom:push_subs', { [clientId]: JSON.stringify(subscription) });
+      return;
     } catch (err) {
       console.error('Failed to save push subscription to Redis:', err);
-      memorySubscriptions[clientId] = subscription;
     }
-  } else {
-    memorySubscriptions[clientId] = subscription;
   }
+  memorySubscriptions[clientId] = subscription;
 }
 
 export async function removePushSubscription(clientId: string): Promise<void> {
@@ -171,13 +214,12 @@ export async function removePushSubscription(clientId: string): Promise<void> {
   if (redis) {
     try {
       await redis.hdel('ghostroom:push_subs', clientId);
+      return;
     } catch (err) {
       console.error('Failed to remove push subscription from Redis:', err);
-      delete memorySubscriptions[clientId];
     }
-  } else {
-    delete memorySubscriptions[clientId];
   }
+  delete memorySubscriptions[clientId];
 }
 
 export async function getAllPushSubscriptions(): Promise<{ clientId: string; subscription: any }[]> {
@@ -186,24 +228,21 @@ export async function getAllPushSubscriptions(): Promise<{ clientId: string; sub
     try {
       const subs = await redis.hgetall('ghostroom:push_subs');
       if (!subs) return [];
-      
+
       const parsedSubs: { clientId: string; subscription: any }[] = [];
       for (const [clientId, subStr] of Object.entries(subs)) {
         try {
-          // Upstash redis client might automatically parse JSON objects depending on configuration.
-          // Handle both string and object.
           const sub = typeof subStr === 'string' ? JSON.parse(subStr) : subStr;
           parsedSubs.push({ clientId, subscription: sub });
-        } catch (e) {
+        } catch {
           console.error(`Failed to parse subscription for ${clientId}`);
         }
       }
       return parsedSubs;
     } catch (err) {
       console.error('Failed to get push subscriptions from Redis:', err);
-      return Object.entries(memorySubscriptions).map(([clientId, sub]) => ({ clientId, subscription: sub }));
     }
   }
-  
-  return Object.entries(memorySubscriptions).map(([clientId, sub]) => ({ clientId, subscription: sub }));
+
+  return Object.entries(memorySubscriptions).map(([clientId, subscription]) => ({ clientId, subscription }));
 }

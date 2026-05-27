@@ -4,11 +4,16 @@ import type { Message, MessageType } from '@/lib/message-types';
 import { sanitizeMessage, filterBadWords, isSpam } from '@/lib/chat-utils';
 import { sanitizeMemeAudioPayload, sanitizeMemeTitle } from '@/lib/meme-utils';
 import { sendPushNotifications } from '@/lib/push';
+import { isValidRoomKey } from '@/lib/room-utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const nickname = searchParams.get('nickname');
   const clientId = searchParams.get('clientId');
+  const roomKey = (searchParams.get('roomKey') || '').trim();
+  if (!isValidRoomKey(roomKey)) {
+    return NextResponse.json({ error: 'Invalid room key.' }, { status: 400 });
+  }
 
   let onlineCount = 1;
   const redis = getRedis();
@@ -18,11 +23,11 @@ export async function GET(request: Request) {
       const presenceId = (clientId || nickname || '').trim();
       if (presenceId) {
         // Track presence: key expires in 15 seconds
-        await redis.set(`ghostroom:presence:${presenceId}`, '1', { ex: 15 });
+        await redis.set(`ghostroom:${roomKey}:presence:${presenceId}`, '1', { ex: 15 });
       }
       
       // Retrieve count of active presence keys
-      const keys = await redis.keys('ghostroom:presence:*');
+      const keys = await redis.keys(`ghostroom:${roomKey}:presence:*`);
       onlineCount = Math.max(1, keys.length);
     } catch (err) {
       console.error('Failed to update presence in GET:', err);
@@ -30,7 +35,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const messages = await fetchMessageHistory();
+    const messages = await fetchMessageHistory(roomKey);
     return NextResponse.json({ messages, onlineCount });
   } catch (err) {
     console.error('Failed to fetch messages in GET API:', err);
@@ -41,15 +46,19 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { nickname, text, clientId, replyToId, replyToNickname, replyToText, type, memeAudio } = body;
+    const { nickname, text, clientId, replyToId, replyToNickname, replyToText, type, memeAudio, roomKey } = body;
     const now = Date.now();
     const messageType: MessageType = type === 'meme_audio' ? 'meme_audio' : 'text';
+    const safeRoomKey = typeof roomKey === 'string' ? roomKey.trim() : '';
+    if (!isValidRoomKey(safeRoomKey)) {
+      return NextResponse.json({ error: 'Invalid room key.' }, { status: 400 });
+    }
 
     const redis = getRedis();
 
     // 1. Rate limiting: Max 1 message every 5 seconds per user
     if (redis && nickname) {
-      const rateLimitKey = `ghostroom:ratelimit:${nickname}`;
+      const rateLimitKey = `ghostroom:${safeRoomKey}:ratelimit:${nickname}`;
       const isLocked = await redis.get(rateLimitKey);
       if (isLocked) {
         return NextResponse.json(
@@ -101,6 +110,7 @@ export async function POST(request: Request) {
       nickname: nickname || 'AnonymousGhost',
       text: processedText,
       createdAt: now,
+      roomKey: safeRoomKey,
       replyToId,
       replyToNickname,
       replyToText,
@@ -109,13 +119,13 @@ export async function POST(request: Request) {
     };
 
     // 5. Save message
-    await saveMessage(newMsg);
+    await saveMessage(newMsg, safeRoomKey);
 
     // Keep presence active
     if (redis && (clientId || nickname)) {
       const presenceId = (clientId || nickname || '').trim();
       if (presenceId) {
-        await redis.set(`ghostroom:presence:${presenceId}`, '1', { ex: 15 });
+        await redis.set(`ghostroom:${safeRoomKey}:presence:${presenceId}`, '1', { ex: 15 });
       }
     }
 
