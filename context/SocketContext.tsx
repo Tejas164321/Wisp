@@ -63,6 +63,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [roomJoinError, setRoomJoinError] = useState<string | null>(null);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
 
+  const rememberRoom = (room: ChatRoom) => {
+    setJoinedRooms((prev) => {
+      const next = [room, ...prev.filter((item) => item.key !== room.key)];
+      return next.slice(0, 20);
+    });
+  };
+
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isCurrentlyTypingRef = useRef(false);
   const pendingJoinResolverRef = useRef<((ok: boolean) => void) | null>(null);
@@ -140,7 +147,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           storedRooms = parsedRooms
             .filter((room): room is ChatRoom => Boolean(room?.key && room?.name && isValidRoomKey(room.key)))
             .slice(0, 20);
-          setJoinedRooms(storedRooms);
+          setTimeout(() => {
+            setJoinedRooms(storedRooms);
+          }, 0);
         }
       } catch {
         localStorage.removeItem(JOINED_ROOMS_STORAGE_KEY);
@@ -153,7 +162,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(storedRoomRaw) as ChatRoom;
         if (parsed?.key && parsed?.name && isValidRoomKey(parsed.key)) {
           if (!storedRooms.some((room) => room.key === parsed.key)) {
-            setJoinedRooms((prev) => [parsed, ...prev].slice(0, 20));
+            setTimeout(() => {
+              setJoinedRooms((prev) => [parsed, ...prev].slice(0, 20));
+            }, 0);
           }
           setTimeout(() => {
             setActiveRoom({ key: parsed.key, name: parsed.name });
@@ -365,13 +376,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, [isPollingMode, nickname, clientId, activeRoom]);
 
   const clearRoomError = () => setRoomJoinError(null);
-
-  const rememberRoom = (room: ChatRoom) => {
-    setJoinedRooms((prev) => {
-      const next = [room, ...prev.filter((item) => item.key !== room.key)];
-      return next.slice(0, 20);
-    });
-  };
 
   const createRoom = (): ChatRoom => {
     const room = generateRoom();

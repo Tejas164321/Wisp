@@ -510,8 +510,8 @@ export default function Home() {
         // If sent by ourselves, always scroll to bottom immediately and clear unreads
         const timer = setTimeout(() => {
           scrollToBottom('smooth');
+          setUnreadCount(0);
         }, 50);
-        setUnreadCount(0);
         return () => clearTimeout(timer);
       } else {
         // Sent by someone else
@@ -522,8 +522,8 @@ export default function Home() {
           // At the bottom: auto scroll
           const timer = setTimeout(() => {
             scrollToBottom('smooth');
+            setUnreadCount(0);
           }, 50);
-          setUnreadCount(0);
           return () => clearTimeout(timer);
         }
       }
@@ -820,7 +820,7 @@ export default function Home() {
         <div className="flex w-full flex-wrap items-center gap-2 px-3 py-2 sm:h-14 sm:flex-nowrap sm:px-4">
           
           {/* Brand Logo */}
-          <div className="flex min-w-0 items-center space-x-2 shrink select-none">
+          <div className="flex min-w-0 items-center space-x-2 shrink-0 select-none">
             <div className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50">
               <Ghost className="h-5 w-5 text-violet-600 dark:text-violet-400" />
             </div>
@@ -836,7 +836,7 @@ export default function Home() {
           <div className="order-3 sm:order-none flex w-full sm:w-auto min-w-0 items-center space-x-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-2.5 py-1 text-xs select-none shadow-inner">
             <Sparkle className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400 animate-pulse-slow shrink-0" />
             <span className="text-[10px] font-mono text-zinc-400 hidden sm:inline shrink-0">Handle:</span>
-            <span className="font-mono font-bold text-violet-600 dark:text-violet-400 truncate max-w-[140px] sm:max-w-[120px]">
+            <span className="font-mono font-bold text-violet-600 dark:text-violet-400 truncate max-w-[120px] sm:max-w-none">
               {nickname || 'Resolving...'}
             </span>
             <button
