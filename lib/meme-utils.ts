@@ -16,8 +16,32 @@ const PROVIDER_URL_RULES: Record<
     hosts: ['101soundboards.com', 'cdn.101soundboards.com', 'static.101soundboards.com'],
     requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
   },
+  instantbuttons: {
+    hosts: ['instantbuttons.com', 'static.instantbuttons.com', 'cdn.instantbuttons.com'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+  blerp: {
+    hosts: ['blerp.com', 'audio.blerp.com', 'cdn.blerp.com'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+  memesoundboard: {
+    hosts: ['memesoundboard.com', 'cdn.memesoundboard.com', 'static.memesoundboard.com'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+  soundboardguy: {
+    hosts: ['soundboardguy.com', 'cdn.soundboardguy.com', 'static.soundboardguy.com'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
 };
-const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = ['myinstants', 'voicy', 'soundboard101'];
+const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = [
+  'myinstants',
+  'voicy',
+  'soundboard101',
+  'instantbuttons',
+  'blerp',
+  'memesoundboard',
+  'soundboardguy',
+];
 const MAX_TITLE_LENGTH = 80;
 const MAX_URL_LENGTH = 512;
 const MAX_DURATION_MS = 600000;

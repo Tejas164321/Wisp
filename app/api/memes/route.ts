@@ -17,6 +17,10 @@ const ALLOWED_PROVIDER_HOST_SUFFIXES = [
   '101soundboards.com',
   'cdn.101soundboards.com',
   'static.101soundboards.com',
+  'instantbuttons.com',
+  'blerp.com',
+  'memesoundboard.com',
+  'soundboardguy.com',
 ];
 const MEME_RESULT_LIMIT = 24;
 const MAX_RESULTS_PER_PROVIDER = 10;
@@ -25,6 +29,7 @@ const MAX_DIRECT_URL_CANDIDATES = 80;
 const MAX_PROVIDER_HTML_LENGTH = 300_000;
 const PROVIDER_REQUEST_TIMEOUT_MS = 4_500;
 const SCORE_EXACT_MATCH = 50;
+const SCORE_STARTS_WITH = 24;
 const SCORE_TOKEN_MATCH = 14;
 const SCORE_PARTIAL_TOKEN_MATCH = 7;
 const SCORE_SYNONYM_MATCH = 6;
@@ -34,12 +39,39 @@ const SCORE_PROVIDER_DIVERSITY = 4;
 const TREND_HINTS = ['meme', 'viral', 'trending', 'funny', 'template', 'reel', 'shorts', 'sigma'];
 const INDIAN_HINTS = ['indian', 'india', 'bollywood', 'hindi', 'desi', 'bhojpuri', 'tollywood'];
 const HTML_AUDIO_URL_PATTERN = String.raw`https:\/\/[^"'\s<]+\.(?:mp3|wav|ogg|m4a)(?:\?[^"'\s<]*)?`;
+const STOP_WORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'to',
+  'of',
+  'and',
+  'or',
+  'for',
+  'in',
+  'on',
+  'with',
+  'is',
+  'it',
+  'this',
+  'that',
+]);
 const TOKEN_SYNONYMS: Record<string, string[]> = {
   meme: ['funny', 'viral', 'template'],
   trend: ['trending', 'viral'],
   trending: ['trend', 'viral'],
   indian: ['india', 'bollywood', 'hindi', 'desi'],
   india: ['indian', 'bollywood', 'hindi', 'desi'],
+  laugh: ['lol', 'lmao', 'rofl'],
+  lol: ['laugh', 'lmao', 'rofl'],
+  sad: ['cry', 'tears', 'sobbing'],
+  cry: ['sad', 'tears', 'sobbing'],
+  angry: ['mad', 'rage'],
+  mad: ['angry', 'rage'],
+  wow: ['omg', 'whoa'],
+  omg: ['wow', 'whoa'],
+  bruh: ['bruhh', 'bruhhh'],
+  sus: ['sussy', 'imposter'],
 };
 
 function isAllowedProviderHost(hostname: string): boolean {
@@ -83,16 +115,47 @@ function normalizeSpace(value: string): string {
 function tokenize(value: string): string[] {
   return normalizeSpace(value)
     .split(' ')
-    .filter(Boolean);
+    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
 }
 
 function buildQueryVariants(query: string): string[] {
-  const hasIndianContext = INDIAN_HINTS.some((hint) => normalizeSpace(query).includes(hint));
-  const variants = [query, `${query} meme`, `${query} funny`, `${query} viral`, `trending ${query}`, `popular ${query}`];
-  if (hasIndianContext) {
-    variants.push(`${query} indian`);
+  const normalizedQuery = sanitizeMemeTitle(query);
+  const normalizedSpace = normalizeSpace(normalizedQuery);
+  const tokens = tokenize(normalizedQuery);
+  const hasIndianContext = INDIAN_HINTS.some((hint) => normalizedSpace.includes(hint));
+  const variants = new Set<string>();
+  const baseHints = ['meme', 'funny', 'viral', 'sound', 'audio', 'clip'];
+
+  if (normalizedQuery) {
+    variants.add(normalizedQuery);
   }
-  return [...new Set(variants.map((variant) => sanitizeMemeTitle(variant)).filter((variant) => variant.length >= 2))].slice(0, 6);
+
+  baseHints.forEach((hint) => {
+    variants.add(`${normalizedQuery} ${hint}`.trim());
+  });
+  variants.add(`trending ${normalizedQuery}`.trim());
+  variants.add(`popular ${normalizedQuery}`.trim());
+
+  if (hasIndianContext) {
+    variants.add(`${normalizedQuery} indian`.trim());
+  }
+
+  tokens.forEach((token) => {
+    const synonyms = TOKEN_SYNONYMS[token] || [];
+    synonyms.slice(0, 2).forEach((synonym) => {
+      const regex = new RegExp(`\\b${token}\\b`, 'gi');
+      const replaced = normalizedQuery.replace(regex, synonym);
+      if (replaced !== normalizedQuery) {
+        variants.add(replaced);
+        variants.add(`${replaced} meme`.trim());
+      }
+    });
+  });
+
+  return [...variants]
+    .map((variant) => sanitizeMemeTitle(variant))
+    .filter((variant) => variant.length >= 2)
+    .slice(0, 8);
 }
 
 async function fetchJson(url: string): Promise<unknown | null> {
@@ -133,6 +196,30 @@ function buildSoundboard101SearchUrl(query: string): string {
 
 function buildVoicySearchUrl(query: string): string {
   const url = new URL('https://www.voicy.network/search');
+  url.searchParams.set('q', query);
+  return url.toString();
+}
+
+function buildInstantButtonsSearchUrl(query: string): string {
+  const url = new URL('https://www.instantbuttons.com/search');
+  url.searchParams.set('query', query);
+  return url.toString();
+}
+
+function buildBlerpSearchUrl(query: string): string {
+  const url = new URL('https://blerp.com/soundboard/search');
+  url.searchParams.set('q', query);
+  return url.toString();
+}
+
+function buildMemeSoundboardSearchUrl(query: string): string {
+  const url = new URL('https://www.memesoundboard.com/search');
+  url.searchParams.set('query', query);
+  return url.toString();
+}
+
+function buildSoundboardGuySearchUrl(query: string): string {
+  const url = new URL('https://www.soundboardguy.com/search');
   url.searchParams.set('q', query);
   return url.toString();
 }
@@ -228,7 +315,10 @@ async function searchMyInstants(variantQuery: string, page: number) {
     .filter(Boolean);
 }
 
-async function searchHtmlProvider(searchUrl: string, provider: 'voicy' | 'soundboard101') {
+async function searchHtmlProvider(
+  searchUrl: string,
+  provider: 'voicy' | 'soundboard101' | 'instantbuttons' | 'blerp' | 'memesoundboard' | 'soundboardguy'
+) {
   const html = await fetchText(searchUrl);
   if (!html) return [] as ReturnType<typeof sanitizeMemeAudioPayload>[];
 
@@ -272,6 +362,9 @@ function scoreMemeResult(query: string, title: string, provider: string): number
         score += SCORE_SYNONYM_MATCH;
       }
     }
+    if (!exactMatch && titleText.startsWith(queryText)) {
+      score += SCORE_STARTS_WITH;
+    }
   }
 
   score += TREND_HINTS.reduce((total, hint) => total + (titleText.includes(hint) ? SCORE_TREND_HINT : 0), 0);
@@ -284,6 +377,8 @@ function scoreMemeResult(query: string, title: string, provider: string): number
 function rankAndMixResults(query: string, rawResults: MemeAudio[]) {
   const deduped = new Map<string, MemeAudio>();
   const scoreByKey = new Map<string, number>();
+  const queryTokens = tokenize(query);
+  const minScore = queryTokens.length ? Math.max(8, queryTokens.length * 5) : 0;
 
   rawResults.forEach((result) => {
     if (!result) return;
@@ -310,10 +405,15 @@ function rankAndMixResults(query: string, rawResults: MemeAudio[]) {
     if (scoreDiff !== 0) return scoreDiff;
     return (a.title || '').localeCompare(b.title || '');
   });
+  const filtered = sorted.filter((result) => {
+    const key = `${result.sourceUrl || ''}::${normalizeSpace(result.title || '')}`;
+    return (scoreByKey.get(key) || 0) >= minScore;
+  });
+  const candidates = filtered.length >= 6 ? filtered : sorted;
 
   const providerCounts = new Map<string, number>();
   const mixed: MemeAudio[] = [];
-  for (const result of sorted) {
+  for (const result of candidates) {
     const provider = result.provider || 'unknown';
     const count = providerCounts.get(provider) || 0;
     if (count >= MAX_RESULTS_PER_PROVIDER) continue;
@@ -380,6 +480,10 @@ export async function GET(request: Request) {
     });
     searchTasks.push(searchHtmlProvider(buildVoicySearchUrl(safeQuery), 'voicy'));
     searchTasks.push(searchHtmlProvider(buildSoundboard101SearchUrl(safeQuery), 'soundboard101'));
+    searchTasks.push(searchHtmlProvider(buildInstantButtonsSearchUrl(safeQuery), 'instantbuttons'));
+    searchTasks.push(searchHtmlProvider(buildBlerpSearchUrl(safeQuery), 'blerp'));
+    searchTasks.push(searchHtmlProvider(buildMemeSoundboardSearchUrl(safeQuery), 'memesoundboard'));
+    searchTasks.push(searchHtmlProvider(buildSoundboardGuySearchUrl(safeQuery), 'soundboardguy'));
 
     const settled = await Promise.allSettled(searchTasks);
     const rawResults = settled.flatMap((item) => (item.status === 'fulfilled' ? item.value : []));
