@@ -635,8 +635,8 @@ export default function Home() {
 
     try {
       const res = await fetch(`/api/memes?q=${encodeURIComponent(searchTerm)}`, { signal: controller.signal });
-      const data = await res.json();
       if (requestId !== memeSearchRequestIdRef.current) return;
+      const data = await res.json();
       if (!res.ok) {
         setMemeError(data.error || 'Meme search failed.');
         setMemeResults([]);
@@ -907,14 +907,11 @@ export default function Home() {
             >
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => {
-                    setShowRoomTools((prev) => !prev);
-                    setShowProfileMenu(false);
-                  }}
+                  onClick={handleCreateRoom}
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Room tools
+                  Create room
                 </button>
                 <button
                   onClick={toggleTheme}
@@ -960,6 +957,17 @@ export default function Home() {
 
       {showRoomTools && (
         <div className="mx-auto w-full max-w-2xl mb-2 shrink-0">
+        <div className="mb-1 flex items-center justify-between px-1">
+          <span className="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Room tools</span>
+          <button
+            onClick={() => setShowRoomTools(false)}
+            className="h-6 w-6 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
+            aria-label="Close room tools"
+            title="Close room tools"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/85 dark:bg-zinc-900/70 px-2.5 py-2 backdrop-blur-sm">
           <button
             onClick={handleCreateRoom}

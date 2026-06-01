@@ -154,19 +154,14 @@ function buildFreesoundSearchUrl(query: string): string {
 }
 
 function buildPixabaySearchUrl(query: string): string {
-  const url = new URL(`https://pixabay.com/sound-effects/search/${encodeURIComponent(query)}/`);
+  const url = new URL('https://pixabay.com/sound-effects/search/');
+  url.searchParams.set('q', query);
   return url.toString();
 }
 
 function buildMixkitSearchUrl(query: string): string {
   const url = new URL('https://mixkit.co/free-sound-effects/');
   url.searchParams.set('q', query);
-  return url.toString();
-}
-
-function buildMyInstantsHtmlSearchUrl(query: string): string {
-  const url = new URL('https://www.myinstants.com/en/search/');
-  url.searchParams.set('name', query);
   return url.toString();
 }
 
@@ -261,7 +256,9 @@ async function searchMyInstants(variantQuery: string, page: number) {
     .filter(Boolean);
 }
 
-async function searchHtmlProvider(searchUrl: string, provider: MemeAudio['provider']) {
+type HtmlProvider = 'voicy' | 'soundboard101' | 'freesound' | 'pixabay' | 'mixkit';
+
+async function searchHtmlProvider(searchUrl: string, provider: HtmlProvider) {
   const html = await fetchText(searchUrl);
   if (!html) return [] as ReturnType<typeof sanitizeMemeAudioPayload>[];
 
@@ -411,7 +408,6 @@ export async function GET(request: Request) {
     queryVariants.slice(1).forEach((variant) => {
       searchTasks.push(searchMyInstants(variant, 1));
     });
-    searchTasks.push(searchHtmlProvider(buildMyInstantsHtmlSearchUrl(safeQuery), 'myinstants'));
     searchTasks.push(searchHtmlProvider(buildVoicySearchUrl(safeQuery), 'voicy'));
     searchTasks.push(searchHtmlProvider(buildSoundboard101SearchUrl(safeQuery), 'soundboard101'));
     searchTasks.push(searchHtmlProvider(buildFreesoundSearchUrl(safeQuery), 'freesound'));
