@@ -6,8 +6,6 @@ import {
   Ghost, 
   Send, 
   RefreshCw, 
-  Sun, 
-  Moon, 
   Wifi, 
   WifiOff, 
   Sparkle,
@@ -23,7 +21,10 @@ import {
   ExternalLink,
   AudioLines,
   Plus,
-  LogOut
+  LogOut,
+  UserRound,
+  Palette,
+  ListTree
 } from 'lucide-react';
 import { useSocketState } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -35,6 +36,9 @@ const MEME_PROVIDER_LABELS: Record<MemeAudio['provider'], string> = {
   myinstants: 'MyInstants',
   voicy: 'Voicy',
   soundboard101: '101Soundboards',
+  freesound: 'Freesound',
+  pixabay: 'Pixabay',
+  mixkit: 'Mixkit',
 };
 
 function getMemeAudioSourceUrl(memeAudio?: MemeAudio): string {
@@ -325,6 +329,8 @@ export default function Home() {
   const [memeResults, setMemeResults] = useState<MemeAudio[]>([]);
   const [memeLoading, setMemeLoading] = useState(false);
   const [memeError, setMemeError] = useState<string | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showRoomTools, setShowRoomTools] = useState(false);
   const [isTypingLocal, setIsTypingLocal] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [joinRoomKey, setJoinRoomKey] = useState('');
@@ -336,12 +342,20 @@ export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const memeSearchRequestIdRef = useRef(0);
+  const memeSearchAbortRef = useRef<AbortController | null>(null);
   const [viewportHeight, setViewportHeight] = useState('100dvh');
 
   const isScrolledUpRef = useRef(isScrolledUp);
   useEffect(() => {
     isScrolledUpRef.current = isScrolledUp;
   }, [isScrolledUp]);
+
+  useEffect(() => {
+    return () => {
+      memeSearchAbortRef.current?.abort();
+    };
+  }, []);
 
   // Capture PWA install prompt event
   useEffect(() => {
@@ -444,6 +458,8 @@ export default function Home() {
 
   const handleCreateRoom = () => {
     clearRoomError();
+    setShowRoomTools(true);
+    setShowProfileMenu(false);
     createRoom();
   };
 
@@ -458,6 +474,7 @@ export default function Home() {
   const handleSwitchRoom = async (roomKey: string) => {
     clearRoomError();
     await switchRoom(roomKey);
+    setShowProfileMenu(false);
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -606,11 +623,19 @@ export default function Home() {
       return;
     }
 
+    memeSearchAbortRef.current?.abort();
+    const requestId = memeSearchRequestIdRef.current + 1;
+    memeSearchRequestIdRef.current = requestId;
+    const controller = new AbortController();
+    memeSearchAbortRef.current = controller;
+
+    setMemeResults([]);
     setMemeLoading(true);
     setMemeError(null);
 
     try {
-      const res = await fetch(`/api/memes?q=${encodeURIComponent(searchTerm)}`);
+      const res = await fetch(`/api/memes?q=${encodeURIComponent(searchTerm)}`, { signal: controller.signal });
+      if (requestId !== memeSearchRequestIdRef.current) return;
       const data = await res.json();
       if (!res.ok) {
         setMemeError(data.error || 'Meme search failed.');
@@ -622,10 +647,14 @@ export default function Home() {
         setMemeError('No meme sounds found.');
       }
     } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return;
+      if (requestId !== memeSearchRequestIdRef.current) return;
       setMemeError('Meme search failed.');
       setMemeResults([]);
     } finally {
-      setMemeLoading(false);
+      if (requestId === memeSearchRequestIdRef.current) {
+        setMemeLoading(false);
+      }
     }
   };
 
@@ -815,108 +844,130 @@ export default function Home() {
       {/* Center column container to align header, chat track, and bottom bar */}
       <div className="mx-auto flex flex-col h-full w-full max-w-3xl relative px-4 sm:px-4">
 
-      {/* 1. Header Navigation Bar (Dynamic Island Capsule shape) */}
-      <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl sm:rounded-full border border-zinc-200/50 dark:border-zinc-900 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shadow-md select-none transition-all shrink-0">
-        <div className="flex w-full flex-wrap items-center gap-2 px-3 py-2 sm:h-14 sm:flex-nowrap sm:px-4">
-          
-          {/* Brand Logo */}
-          <div className="flex min-w-0 items-center space-x-2 shrink-0 select-none">
+      {/* 1. Header Navigation Bar */}
+      <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl border border-zinc-200/60 dark:border-zinc-900 bg-white/85 dark:bg-zinc-950/85 backdrop-blur-md shadow-md select-none transition-all shrink-0">
+        <div className="flex w-full items-center gap-2 px-3 py-2 sm:h-14 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2">
             <div className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50">
               <Ghost className="h-5 w-5 text-violet-600 dark:text-violet-400" />
             </div>
-            <span className="font-display font-bold text-base tracking-tight text-zinc-900 dark:text-zinc-50 hidden xs:inline-block">
-              Wisp
-            </span>
-            <span className="inline-flex min-w-0 items-center rounded-full border border-violet-200/70 dark:border-violet-800/60 px-2 py-0.5 text-[10px] font-mono text-violet-600 dark:text-violet-300 bg-violet-50/80 dark:bg-violet-900/20 max-w-[120px] xs:max-w-[160px] truncate">
-              {currentRoom.name} · #{currentRoom.key}
-            </span>
-          </div>
-
-          {/* User identity badge (Consolidated inline to prevent header splitting) */}
-          <div className="order-3 sm:order-none flex w-full sm:w-auto min-w-0 items-center space-x-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-2.5 py-1 text-xs select-none shadow-inner">
-            <Sparkle className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400 animate-pulse-slow shrink-0" />
-            <span className="text-[10px] font-mono text-zinc-400 hidden sm:inline shrink-0">Handle:</span>
-            <span className="font-mono font-bold text-violet-600 dark:text-violet-400 truncate max-w-[120px] sm:max-w-none">
-              {nickname || 'Resolving...'}
-            </span>
-            <button
-              onClick={regenerateUserNickname}
-              className="p-1 ml-0.5 text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors rounded-md hover:bg-violet-50 dark:hover:bg-violet-950/40 cursor-pointer shrink-0"
-              title="Regenerate random identity"
-            >
-              <RefreshCw className="h-3 w-3" />
-            </button>
-          </div>
-
-          {/* Right toggle panel */}
-          <div className="ml-auto order-2 sm:order-none flex items-center space-x-1.5 shrink-0">
-            {/* Global Network / Online status */}
-            <div className="hidden xs:flex items-center space-x-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 px-2.5 py-0.5 text-xs text-zinc-600 dark:text-zinc-400 shadow-sm backdrop-blur-sm">
-              <span className="relative flex h-1.5 w-1.5 mr-0.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-              </span>
-              <span className="font-mono text-[10px] font-medium">
-                {onlineCount} <span className="hidden sm:inline">{onlineCount === 1 ? 'ghost' : 'ghosts'}</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-display font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-50">Wisp</span>
+                <span className="inline-flex items-center rounded-full bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 text-[9px] font-mono text-zinc-500 dark:text-zinc-400">
+                  {onlineCount} active
+                </span>
+              </div>
+              <span className="block max-w-[170px] truncate text-[10px] font-mono text-violet-600 dark:text-violet-300">
+                {currentRoom.name} · #{currentRoom.key}
               </span>
             </div>
-            
-            {/* Network Indicator status */}
+          </div>
+
+          <div className="ml-auto flex items-center gap-1.5">
             <div className="text-xs">
               {isConnected ? (
-                <span className="text-emerald-500" title="Connected in Sanctuary">
+                <span className="text-emerald-500" title="Connected">
                   <Wifi className="h-4 w-4" />
                 </span>
               ) : (
-                <span className="text-red-500" title="Space Portal Broken, searching reconnect...">
+                <span className="text-red-500" title="Reconnecting">
                   <WifiOff className="h-4 w-4 animate-pulse" />
                 </span>
               )}
             </div>
 
-            {/* Toggle sound effects */}
             <button
-             onClick={exitRoom}
-             className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-800 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
-             aria-label="Exit room"
-             title="Exit room"
+              onClick={regenerateUserNickname}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
+              aria-label="Refresh username"
+              title="Refresh username"
             >
-             <LogOut className="h-3.5 w-3.5" />
+              <RefreshCw className="h-3.5 w-3.5" />
             </button>
 
             <button
-              id="sound_switch"
-              onClick={toggleSoundEnabled}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-800 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
-              aria-label="Toggle notification sounds"
-              title={soundEnabled ? "Mute whispers" : "Unmute whispers"}
+              onClick={() => setShowProfileMenu((prev) => !prev)}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
+              aria-label="Open profile menu"
+              title="Profile menu"
             >
-              {soundEnabled ? (
-                <Volume2 className="h-3.5 w-3.5" />
-              ) : (
-                <VolumeX className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
-              )}
-            </button>
-
-            {/* Toggle dark system */}
-            <button
-              id="theme_switch"
-              onClick={toggleTheme}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-800 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
-              aria-label="Toggle visual theme"
-            >
-              {theme === 'dark' ? (
-                <Sun className="h-3.5 w-3.5" />
-              ) : (
-                <Moon className="h-3.5 w-3.5" />
-              )}
+              <UserRound className="h-4 w-4" />
             </button>
           </div>
-
         </div>
+
+        <AnimatePresence>
+          {showProfileMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="border-t border-zinc-200/70 dark:border-zinc-800/70 px-3 py-2.5 sm:px-4"
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleCreateRoom}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create room
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  id="theme_switch"
+                >
+                  <Palette className="h-3.5 w-3.5" />
+                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                </button>
+                <button
+                  onClick={toggleSoundEnabled}
+                  id="sound_switch"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                  {soundEnabled ? 'Mute' : 'Unmute'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowRoomTools(true);
+                    setShowProfileMenu(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  <ListTree className="h-3.5 w-3.5" />
+                  Rooms
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  exitRoom();
+                  setShowProfileMenu(false);
+                }}
+                className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/70 bg-red-50 dark:bg-red-950/30 px-2.5 py-2 text-[11px] font-semibold text-red-600 dark:text-red-300 transition-colors hover:bg-red-100 dark:hover:bg-red-950/50"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Exit room
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
-      <div className="mx-auto w-full max-w-2xl mb-2 shrink-0">
+      {showRoomTools && (
+        <div className="mx-auto w-full max-w-2xl mb-2 shrink-0">
+        <div className="mb-1 flex items-center justify-between px-1">
+          <span className="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Room tools</span>
+          <button
+            onClick={() => setShowRoomTools(false)}
+            className="h-6 w-6 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
+            aria-label="Close room tools"
+            title="Close room tools"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/85 dark:bg-zinc-900/70 px-2.5 py-2 backdrop-blur-sm">
           <button
             onClick={handleCreateRoom}
@@ -966,6 +1017,7 @@ export default function Home() {
           <p className="mt-1 text-xs text-red-500 px-1">{roomJoinError}</p>
         )}
       </div>
+      )}
 
       {/* PWA Install Banner */}
       <AnimatePresence>
@@ -1125,6 +1177,13 @@ export default function Home() {
           className="w-full pt-2 bg-transparent px-4 sm:px-4"
         >
           <div className="flex flex-col">
+            <div className="mb-2 flex items-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/80 dark:bg-zinc-900/70 px-2.5 py-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400 w-fit max-w-full">
+              <Sparkle className="h-3.5 w-3.5 text-violet-500 dark:text-violet-400 shrink-0" />
+              <span className="shrink-0 text-zinc-400 dark:text-zinc-500">You:</span>
+              <span className="truncate text-violet-600 dark:text-violet-300 font-semibold">
+                {nickname || 'Resolving...'}
+              </span>
+            </div>
             {/* Rate limiter error banner / Network Error Banner */}
             <AnimatePresence>
               {error && (
