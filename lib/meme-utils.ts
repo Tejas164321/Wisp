@@ -16,8 +16,20 @@ const PROVIDER_URL_RULES: Record<
     hosts: ['101soundboards.com', 'cdn.101soundboards.com', 'static.101soundboards.com'],
     requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
   },
+  freesound: {
+    hosts: ['freesound.org', 'cdn.freesound.org'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+  pixabay: {
+    hosts: ['pixabay.com', 'cdn.pixabay.com'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
+  mixkit: {
+    hosts: ['mixkit.co', 'assets.mixkit.co', 'cdn.mixkit.co'],
+    requiredExt: ['.mp3', '.ogg', '.wav', '.m4a'],
+  },
 };
-const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = ['myinstants', 'voicy', 'soundboard101'];
+const ALLOWED_MEME_PROVIDERS: MemeAudioProvider[] = ['myinstants', 'voicy', 'soundboard101', 'freesound', 'pixabay', 'mixkit'];
 const MAX_TITLE_LENGTH = 80;
 const MAX_URL_LENGTH = 512;
 const MAX_DURATION_MS = 600000;

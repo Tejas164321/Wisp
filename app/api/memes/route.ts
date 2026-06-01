@@ -17,6 +17,13 @@ const ALLOWED_PROVIDER_HOST_SUFFIXES = [
   '101soundboards.com',
   'cdn.101soundboards.com',
   'static.101soundboards.com',
+  'freesound.org',
+  'cdn.freesound.org',
+  'pixabay.com',
+  'cdn.pixabay.com',
+  'mixkit.co',
+  'assets.mixkit.co',
+  'cdn.mixkit.co',
 ];
 const MEME_RESULT_LIMIT = 24;
 const MAX_RESULTS_PER_PROVIDER = 10;
@@ -40,6 +47,9 @@ const TOKEN_SYNONYMS: Record<string, string[]> = {
   trending: ['trend', 'viral'],
   indian: ['india', 'bollywood', 'hindi', 'desi'],
   india: ['indian', 'bollywood', 'hindi', 'desi'],
+  laugh: ['lol', 'funny', 'comedy'],
+  scream: ['shout', 'yell'],
+  fail: ['oops', 'error', 'wrong'],
 };
 
 function isAllowedProviderHost(hostname: string): boolean {
@@ -137,6 +147,29 @@ function buildVoicySearchUrl(query: string): string {
   return url.toString();
 }
 
+function buildFreesoundSearchUrl(query: string): string {
+  const url = new URL('https://freesound.org/search/');
+  url.searchParams.set('q', query);
+  return url.toString();
+}
+
+function buildPixabaySearchUrl(query: string): string {
+  const url = new URL(`https://pixabay.com/sound-effects/search/${encodeURIComponent(query)}/`);
+  return url.toString();
+}
+
+function buildMixkitSearchUrl(query: string): string {
+  const url = new URL('https://mixkit.co/free-sound-effects/');
+  url.searchParams.set('q', query);
+  return url.toString();
+}
+
+function buildMyInstantsHtmlSearchUrl(query: string): string {
+  const url = new URL('https://www.myinstants.com/en/search/');
+  url.searchParams.set('name', query);
+  return url.toString();
+}
+
 function getTitleFromAudioUrl(audioUrl: string): string {
   try {
     const pathname = new URL(audioUrl).pathname;
@@ -228,7 +261,7 @@ async function searchMyInstants(variantQuery: string, page: number) {
     .filter(Boolean);
 }
 
-async function searchHtmlProvider(searchUrl: string, provider: 'voicy' | 'soundboard101') {
+async function searchHtmlProvider(searchUrl: string, provider: MemeAudio['provider']) {
   const html = await fetchText(searchUrl);
   if (!html) return [] as ReturnType<typeof sanitizeMemeAudioPayload>[];
 
@@ -378,8 +411,12 @@ export async function GET(request: Request) {
     queryVariants.slice(1).forEach((variant) => {
       searchTasks.push(searchMyInstants(variant, 1));
     });
+    searchTasks.push(searchHtmlProvider(buildMyInstantsHtmlSearchUrl(safeQuery), 'myinstants'));
     searchTasks.push(searchHtmlProvider(buildVoicySearchUrl(safeQuery), 'voicy'));
     searchTasks.push(searchHtmlProvider(buildSoundboard101SearchUrl(safeQuery), 'soundboard101'));
+    searchTasks.push(searchHtmlProvider(buildFreesoundSearchUrl(safeQuery), 'freesound'));
+    searchTasks.push(searchHtmlProvider(buildPixabaySearchUrl(safeQuery), 'pixabay'));
+    searchTasks.push(searchHtmlProvider(buildMixkitSearchUrl(safeQuery), 'mixkit'));
 
     const settled = await Promise.allSettled(searchTasks);
     const rawResults = settled.flatMap((item) => (item.status === 'fulfilled' ? item.value : []));
