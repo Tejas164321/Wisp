@@ -28,6 +28,7 @@ interface SocketContextType {
   createRoom: () => ChatRoom;
   joinRoom: (roomKey: string, roomNameHint?: string) => Promise<boolean>;
   switchRoom: (roomKey: string) => Promise<boolean>;
+  leaveRoom: () => void;
   exitRoom: () => void;
   clearRoomError: () => void;
   sendMessage: (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => void;
@@ -468,6 +469,32 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     pendingJoinRoomRef.current = null;
   };
 
+  const leaveRoom = () => {
+    const roomToLeave = activeRoomRef.current;
+    if (!roomToLeave) {
+      return;
+    }
+    if (socket && isSocketConnected) {
+      socket.emit('leave_room');
+    }
+    joinedRoomKeyRef.current = null;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+    }
+    setJoinedRooms((prev) => prev.filter((room) => room.key !== roomToLeave.key));
+    setActiveRoom(null);
+    setMessages([]);
+    setTypingUsers([]);
+    setOnlineCount(1);
+    setRoomJoinError(null);
+    setIsJoiningRoom(false);
+    if (pendingJoinResolverRef.current) {
+      pendingJoinResolverRef.current(false);
+      pendingJoinResolverRef.current = null;
+    }
+    pendingJoinRoomRef.current = null;
+  };
+
   const sendMessage = async (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => {
     if (!activeRoom) {
       setError('Create or join a room first.');
@@ -639,6 +666,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         createRoom,
         joinRoom,
         switchRoom,
+        leaveRoom,
         exitRoom,
         clearRoomError,
         sendMessage,
