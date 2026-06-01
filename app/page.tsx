@@ -315,6 +315,7 @@ export default function Home() {
     createRoom,
     joinRoom,
     switchRoom,
+    leaveRoom,
     exitRoom,
     clearRoomError
   } = useSocketState();
@@ -474,6 +475,12 @@ export default function Home() {
   const handleSwitchRoom = async (roomKey: string) => {
     clearRoomError();
     await switchRoom(roomKey);
+    setShowProfileMenu(false);
+  };
+
+  const toggleRoomTools = () => {
+    clearRoomError();
+    setShowRoomTools((prev) => !prev);
     setShowProfileMenu(false);
   };
 
@@ -827,6 +834,27 @@ export default function Home() {
           {roomJoinError && (
             <p id="room-join-error" className="text-xs text-red-500 text-center">{roomJoinError}</p>
           )}
+
+          {joinedRooms.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                Joined rooms
+              </p>
+              <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                {joinedRooms.map((room) => (
+                  <button
+                    key={room.key}
+                    onClick={() => handleSwitchRoom(room.key)}
+                    disabled={isJoiningRoom}
+                    className="flex w-full items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 text-left text-xs text-zinc-700 dark:text-zinc-200 transition-colors disabled:opacity-60"
+                  >
+                    <span className="truncate">{room.name}</span>
+                    <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400">#{room.key}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -848,9 +876,18 @@ export default function Home() {
       <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl border border-zinc-200/60 dark:border-zinc-900 bg-white/85 dark:bg-zinc-950/85 backdrop-blur-md shadow-md select-none transition-all shrink-0">
         <div className="flex w-full items-center gap-2 px-3 py-2 sm:h-14 sm:px-4">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50">
+            <button
+              onClick={toggleRoomTools}
+              className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+                showRoomTools
+                  ? 'border-violet-300 dark:border-violet-700 bg-violet-100 dark:bg-violet-900/40'
+                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200/50 dark:border-zinc-800/50'
+              }`}
+              aria-label={showRoomTools ? 'Close room list' : 'Open room list'}
+              title={showRoomTools ? 'Close room list' : 'Open room list'}
+            >
               <Ghost className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-            </div>
+            </button>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-display font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-50">Wisp</span>
@@ -889,10 +926,10 @@ export default function Home() {
             <button
               onClick={() => setShowProfileMenu((prev) => !prev)}
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
-              aria-label="Open profile menu"
-              title="Profile menu"
+              aria-label={showProfileMenu ? 'Close profile menu' : 'Open profile menu'}
+              title={showProfileMenu ? 'Close profile menu' : 'Profile menu'}
             >
-              <UserRound className="h-4 w-4" />
+              {showProfileMenu ? <X className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
             </button>
           </div>
         </div>
@@ -930,94 +967,116 @@ export default function Home() {
                   {soundEnabled ? 'Mute' : 'Unmute'}
                 </button>
                 <button
-                  onClick={() => {
-                    setShowRoomTools(true);
-                    setShowProfileMenu(false);
-                  }}
+                  onClick={toggleRoomTools}
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
                 >
                   <ListTree className="h-3.5 w-3.5" />
                   Rooms
                 </button>
               </div>
-              <button
-                onClick={() => {
-                  exitRoom();
-                  setShowProfileMenu(false);
-                }}
-                className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/70 bg-red-50 dark:bg-red-950/30 px-2.5 py-2 text-[11px] font-semibold text-red-600 dark:text-red-300 transition-colors hover:bg-red-100 dark:hover:bg-red-950/50"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Exit room
-              </button>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    leaveRoom();
+                    setShowProfileMenu(false);
+                    setShowRoomTools(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200/70 dark:border-amber-900/70 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-950/50"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Leave room
+                </button>
+                <button
+                  onClick={() => {
+                    exitRoom();
+                    setShowProfileMenu(false);
+                    setShowRoomTools(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/70 bg-red-50 dark:bg-red-950/30 px-2.5 py-2 text-[11px] font-semibold text-red-600 dark:text-red-300 transition-colors hover:bg-red-100 dark:hover:bg-red-950/50"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Exit room
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </header>
 
-      {showRoomTools && (
-        <div className="mx-auto w-full max-w-2xl mb-2 shrink-0">
-        <div className="mb-1 flex items-center justify-between px-1">
-          <span className="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Room tools</span>
-          <button
-            onClick={() => setShowRoomTools(false)}
-            className="h-6 w-6 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
-            aria-label="Close room tools"
-            title="Close room tools"
+      <AnimatePresence>
+        {showRoomTools && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="mx-auto w-full max-w-2xl mb-2 shrink-0"
           >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/85 dark:bg-zinc-900/70 px-2.5 py-2 backdrop-blur-sm">
-          <button
-            onClick={handleCreateRoom}
-            disabled={isJoiningRoom}
-            className="flex h-8 items-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 disabled:opacity-60 transition-colors"
-            title="Create a new room"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New
-          </button>
+            <div className="rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 px-3 py-3 backdrop-blur-sm shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                  Joined & created rooms
+                </span>
+                <button
+                  onClick={() => setShowRoomTools(false)}
+                  className="h-6 w-6 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
+                  aria-label="Close room list"
+                  title="Close room list"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
 
-          <div className="flex items-center gap-1.5">
-            <input
-              value={joinRoomKey}
-              onChange={(e) => setJoinRoomKey(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              placeholder="0000"
-              aria-label="Join room key"
-              className="h-8 w-20 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 text-[11px] font-mono tracking-[0.22em] text-center outline-none focus:border-violet-500"
-            />
-            <button
-              onClick={handleJoinRoom}
-              disabled={joinRoomKey.length !== 4 || isJoiningRoom}
-              className="h-8 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 disabled:opacity-60 transition-colors"
-            >
-              Join
-            </button>
-          </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCreateRoom}
+                  disabled={isJoiningRoom}
+                  className="flex h-8 items-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 disabled:opacity-60 transition-colors"
+                  title="Create a new room"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create
+                </button>
+                <input
+                  value={joinRoomKey}
+                  onChange={(e) => setJoinRoomKey(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="0000"
+                  aria-label="Join room key"
+                  className="h-8 w-20 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 text-[11px] font-mono tracking-[0.22em] text-center outline-none focus:border-violet-500"
+                />
+                <button
+                  onClick={handleJoinRoom}
+                  disabled={joinRoomKey.length !== 4 || isJoiningRoom}
+                  className="h-8 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2.5 text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 disabled:opacity-60 transition-colors"
+                >
+                  Join
+                </button>
+              </div>
 
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-0.5">
-            {joinedRooms.map((room) => (
-              <button
-                key={room.key}
-                onClick={() => handleSwitchRoom(room.key)}
-                className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-mono transition-colors ${
-                  room.key === currentRoom.key
-                    ? 'border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
-                    : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                }`}
-                title={`${room.name} (#${room.key})`}
-              >
-                {room.name} · #{room.key}
-              </button>
-            ))}
-          </div>
-        </div>
-        {roomJoinError && (
-          <p className="mt-1 text-xs text-red-500 px-1">{roomJoinError}</p>
+              <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+                {joinedRooms.map((room) => (
+                  <button
+                    key={room.key}
+                    onClick={() => handleSwitchRoom(room.key)}
+                    className={`flex w-full items-center justify-between rounded-xl border px-2.5 py-2 text-left transition-colors ${
+                      room.key === currentRoom.key
+                        ? 'border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
+                        : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                    }`}
+                    title={`${room.name} (#${room.key})`}
+                  >
+                    <span className="truncate text-xs">{room.name}</span>
+                    <span className="ml-2 shrink-0 font-mono text-[10px]">#{room.key}</span>
+                  </button>
+                ))}
+              </div>
+
+              {roomJoinError && (
+                <p className="text-xs text-red-500">{roomJoinError}</p>
+              )}
+            </div>
+          </motion.div>
         )}
-      </div>
-      )}
+      </AnimatePresence>
 
       {/* PWA Install Banner */}
       <AnimatePresence>
