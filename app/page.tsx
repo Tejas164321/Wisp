@@ -22,6 +22,7 @@ import {
   AudioLines,
   Plus,
   LogOut,
+  DoorOpen,
   UserRound,
   Palette,
   ListTree
@@ -927,6 +928,7 @@ export default function Home() {
               onClick={() => setShowProfileMenu((prev) => !prev)}
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
               aria-label={showProfileMenu ? 'Close profile menu' : 'Open profile menu'}
+              aria-expanded={showProfileMenu}
               title={showProfileMenu ? 'Close profile menu' : 'Profile menu'}
             >
               {showProfileMenu ? <X className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
@@ -983,7 +985,7 @@ export default function Home() {
                   }}
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200/70 dark:border-amber-900/70 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-950/50"
                 >
-                  <LogOut className="h-3.5 w-3.5" />
+                  <DoorOpen className="h-3.5 w-3.5" />
                   Leave room
                 </button>
                 <button
@@ -1034,7 +1036,7 @@ export default function Home() {
                   title="Create a new room"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Create
+                  Create room
                 </button>
                 <input
                   value={joinRoomKey}
