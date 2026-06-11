@@ -23,7 +23,7 @@ export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
       scale: [1, 1.3, 0.9, 1.2, 1],
       x: [0, 80, -30, 50, 0],
       y: [0, 50, 80, -40, 0],
-      transition: { duration: 15, repeat: Infinity, ease: "easeInOut" }
+      transition: { duration: 15, repeat: Infinity, ease: "easeInOut" as const }
     }
   };
 
@@ -32,7 +32,7 @@ export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
       scale: [0.9, 1.4, 1, 1.3, 0.9],
       x: [0, -90, 40, -60, 0],
       y: [0, -60, -90, 40, 0],
-      transition: { duration: 18, repeat: Infinity, ease: "easeInOut" }
+      transition: { duration: 18, repeat: Infinity, ease: "easeInOut" as const }
     }
   };
 
@@ -41,7 +41,7 @@ export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
       scale: [1.2, 0.8, 1.3, 0.9, 1.2],
       x: [0, -60, 80, -40, 0],
       y: [0, 80, 40, 60, 0],
-      transition: { duration: 16, repeat: Infinity, ease: "easeInOut" }
+      transition: { duration: 16, repeat: Infinity, ease: "easeInOut" as const }
     }
   };
 
@@ -50,7 +50,7 @@ export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
       scale: [1, 1.5, 0.9, 1.2, 1],
       x: [0, 60, -50, 70, 0],
       y: [0, -50, -80, 50, 0],
-      transition: { duration: 20, repeat: Infinity, ease: "easeInOut" }
+      transition: { duration: 20, repeat: Infinity, ease: "easeInOut" as const }
     }
   };
 
