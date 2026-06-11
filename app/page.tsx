@@ -37,6 +37,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 import type { MemeAudio, Message, ChatRoom } from '@/lib/message-types';
 import { getMemeAudioPreviewLabel } from '@/lib/meme-utils';
 import { generateRoomName } from '@/lib/room-utils';
+import SplashScreen from '@/components/SplashScreen';
 
 const MEME_PROVIDER_LABELS: Record<MemeAudio['provider'], string> = {
   myinstants: 'MyInstants',
@@ -330,6 +331,7 @@ export default function Home() {
   const { isSupported: isPushSupported, subscription: pushSubscription, permission, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const [replyTo, setReplyTo] = useState<{ id: string; nickname: string; text: string } | null>(null);
 
+  const [showSplash, setShowSplash] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [pendingRoom, setPendingRoom] = useState<ChatRoom | null>(null);
@@ -816,8 +818,11 @@ export default function Home() {
     });
   };
 
-  if (!activeRoom) {
-    return (
+  const currentRoom = activeRoom || { key: '', name: '' };
+
+  return (
+    <>
+      {!activeRoom ? (
       <div style={{ height: viewportHeight }} className="relative flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4 overflow-hidden animate-fade-in">
         {/* Ambient background glows */}
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-violet-400/10 dark:bg-violet-600/5 blur-[120px] pointer-events-none" />
@@ -960,13 +965,7 @@ export default function Home() {
           )}
         </div>
       </div>
-    );
-  }
-
-  const currentRoom = activeRoom;
-
-  return (
-    <>
+      ) : (
       <div 
         style={{ height: viewportHeight }}
         className="flex flex-col overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-ghost-light-text dark:text-ghost-dark-text selection:bg-zinc-200 dark:selection:bg-zinc-800 w-full"
@@ -978,10 +977,10 @@ export default function Home() {
       {/* 1. Header Navigation Bar */}
       <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl border border-zinc-200 dark:border-zinc-800/80 bg-zinc-100/90 dark:bg-zinc-900/90 backdrop-blur-md shadow-md select-none transition-all shrink-0">
         <div className="flex w-full items-center gap-2 px-3 py-2 sm:h-14 sm:px-4">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
             <button
               onClick={toggleRoomTools}
-              className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+              className={`p-1.5 rounded-xl border transition-colors cursor-pointer shrink-0 ${
                 showRoomTools
                   ? 'border-violet-350 dark:border-violet-700 bg-violet-100 dark:bg-violet-900/40'
                   : 'bg-zinc-200/50 dark:bg-zinc-950/40 border-zinc-200 dark:border-zinc-800/30'
@@ -991,17 +990,12 @@ export default function Home() {
             >
               <Ghost className="h-5 w-5 text-violet-600 dark:text-violet-400" />
             </button>
-            <div className="min-w-0 flex items-center gap-2">
-              <span className="font-display font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-55 shrink-0">Wisp</span>
+            <div className="min-w-0 flex items-center gap-1.5">
+              <span className="font-display font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-50 shrink-0">Wisp</span>
               <span className="text-[10px] text-zinc-400 dark:text-zinc-500 shrink-0 font-medium">·</span>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="block truncate text-[11px] font-semibold text-zinc-850 dark:text-zinc-200">
-                  {currentRoom.name}
-                </span>
-                <span className="inline-flex items-center rounded-full bg-violet-50 dark:bg-violet-950/40 border border-violet-200/40 dark:border-violet-850 px-2.5 py-0.5 text-[10px] font-mono font-bold text-violet-600 dark:text-violet-400 shrink-0 tracking-wider shadow-sm">
-                  {currentRoom.key}
-                </span>
-              </div>
+              <span className="block truncate text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                {currentRoom.name}
+              </span>
             </div>
           </div>
 
@@ -1018,7 +1012,7 @@ export default function Home() {
                   <Wifi className="h-4 w-4" />
                 </span>
               ) : (
-                <span className="text-red-505" title="Reconnecting">
+                <span className="text-red-500" title="Reconnecting">
                   <WifiOff className="h-4 w-4 animate-pulse" />
                 </span>
               )}
@@ -1051,8 +1045,33 @@ export default function Home() {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="border-t border-zinc-205/60 dark:border-zinc-800/60 px-3 py-2.5 sm:px-4"
+              className="border-t border-zinc-200/60 dark:border-zinc-800/60 px-3 py-2.5 sm:px-4 flex flex-col gap-2.5"
             >
+              {/* Copyable Current Room PIN Badge */}
+              <div className="flex items-center justify-between border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 font-mono shrink-0">ROOM PIN:</span>
+                  <span className="truncate text-xs font-mono font-bold text-zinc-850 dark:text-zinc-200">{currentRoom.name}</span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(currentRoom.key);
+                    setCopiedKey(currentRoom.key);
+                    setTimeout(() => setCopiedKey(null), 1500);
+                  }}
+                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all border shrink-0 cursor-pointer shadow-sm ${
+                    copiedKey === currentRoom.key
+                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/50'
+                      : 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 border border-violet-200/30 dark:border-violet-850 hover:border-violet-500/50 hover:bg-violet-100/50'
+                  }`}
+                  title="Copy key"
+                >
+                  {copiedKey === currentRoom.key ? <Check className="h-2.5 w-2.5" /> : null}
+                  <span>{currentRoom.key}</span>
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={handleCreateRoom}
@@ -1104,7 +1123,7 @@ export default function Home() {
                     exitRoom();
                     setShowProfileMenu(false);
                   }}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/50 bg-red-50 dark:bg-red-955/20 px-2.5 py-2 text-[11px] font-semibold text-red-650 dark:text-red-355 transition-colors hover:bg-red-100 dark:hover:bg-red-950/40"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 px-2.5 py-2 text-[11px] font-semibold text-red-650 dark:text-red-355 transition-colors hover:bg-red-100 dark:hover:bg-red-950/40"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   Exit room
@@ -1609,6 +1628,10 @@ export default function Home() {
       
       </div>
     </div>
+      )}
+
+    {/* Initial Splash Screen */}
+    {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
 
     {/* Onboarding Welcome Splash Overlay Modal */}
     <AnimatePresence>
