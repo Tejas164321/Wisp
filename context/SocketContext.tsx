@@ -25,10 +25,10 @@ interface SocketContextType {
   joinedRooms: ChatRoom[];
   roomJoinError: string | null;
   isJoiningRoom: boolean;
-  createRoom: () => ChatRoom;
+  createRoom: (customName?: string) => ChatRoom;
   joinRoom: (roomKey: string, roomNameHint?: string) => Promise<boolean>;
   switchRoom: (roomKey: string) => Promise<boolean>;
-  leaveRoom: () => void;
+  leaveRoom: (roomKey?: string) => void;
   exitRoom: () => void;
   clearRoomError: () => void;
   sendMessage: (payload: SendMessagePayload, replyTo?: { id: string; nickname: string; text: string }) => void;
@@ -63,6 +63,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [joinedRooms, setJoinedRooms] = useState<ChatRoom[]>([]);
   const [roomJoinError, setRoomJoinError] = useState<string | null>(null);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const rememberRoom = (room: ChatRoom) => {
     setJoinedRooms((prev) => {
@@ -100,10 +101,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const joinedRoomsRef = useRef<ChatRoom[]>(joinedRooms);
   useEffect(() => {
     joinedRoomsRef.current = joinedRooms;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isHydrated) {
       localStorage.setItem(JOINED_ROOMS_STORAGE_KEY, JSON.stringify(joinedRooms));
     }
-  }, [joinedRooms]);
+  }, [joinedRooms, isHydrated]);
 
   const audioRef = useRef<{
     playReceiveSound: () => void;
@@ -177,6 +178,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
       }
     }
+    setTimeout(() => {
+      setIsHydrated(true);
+    }, 10);
   }, []);
 
   useEffect(() => {
@@ -234,6 +238,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       joinedRoomKeyRef.current = null;
       setIsJoiningRoom(false);
       setRoomJoinError(payload?.reason || 'Unable to join this room.');
+      setActiveRoom(null);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+      }
       if (pendingJoinResolverRef.current) {
         pendingJoinResolverRef.current(false);
         pendingJoinResolverRef.current = null;
@@ -244,11 +252,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketClient.on('disconnect', () => {
       setIsSocketConnected(false);
       setIsPollingMode(true);
+      setIsJoiningRoom(false);
     });
 
     socketClient.on('connect_error', () => {
       clearTimeout(fallbackTimeout);
       setIsPollingMode(true);
+      setIsJoiningRoom(false);
     });
 
     socketClient.on('history', (historyMessages: Message[]) => {
@@ -378,23 +388,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   const clearRoomError = () => setRoomJoinError(null);
 
-  const createRoom = (): ChatRoom => {
-    const room = generateRoom();
+  const createRoom = (customName?: string): ChatRoom => {
+    const room = generateRoom(customName);
     setMessages([]);
     setTypingUsers([]);
     setOnlineCount(1);
     setIsJoiningRoom(true);
     setRoomJoinError(null);
     pendingJoinRoomRef.current = room;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
-    }
-    rememberRoom(room);
-    setActiveRoom(room);
     if (socket && isSocketConnected) {
       joinedRoomKeyRef.current = null;
       socket.emit('join_room', { roomKey: room.key, roomName: room.name });
     } else {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(room));
+      }
+      rememberRoom(room);
+      setActiveRoom(room);
       setIsJoiningRoom(false);
     }
     return room;
@@ -469,23 +479,27 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     pendingJoinRoomRef.current = null;
   };
 
-  const leaveRoom = () => {
-    const roomToLeave = activeRoomRef.current;
+  const leaveRoom = (roomKey?: string) => {
+    const roomToLeave = roomKey 
+      ? joinedRoomsRef.current.find((r) => r.key === roomKey) 
+      : activeRoomRef.current;
     if (!roomToLeave) {
       return;
     }
-    if (socket && isSocketConnected) {
+    if (socket && isSocketConnected && roomToLeave.key === activeRoomRef.current?.key) {
       socket.emit('leave_room');
     }
-    joinedRoomKeyRef.current = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+    if (roomToLeave.key === activeRoomRef.current?.key) {
+      joinedRoomKeyRef.current = null;
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+      }
+      setActiveRoom(null);
+      setMessages([]);
+      setTypingUsers([]);
+      setOnlineCount(1);
     }
     setJoinedRooms((prev) => prev.filter((room) => room.key !== roomToLeave.key));
-    setActiveRoom(null);
-    setMessages([]);
-    setTypingUsers([]);
-    setOnlineCount(1);
     setRoomJoinError(null);
     setIsJoiningRoom(false);
     if (pendingJoinResolverRef.current) {

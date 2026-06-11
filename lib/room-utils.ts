@@ -46,10 +46,10 @@ export function generateRoomName(): string {
   return `${theme}${suffix}`;
 }
 
-export function generateRoom(): ChatRoom {
+export function generateRoom(customName?: string): ChatRoom {
   return {
     key: generateRoomKey(),
-    name: generateRoomName(),
+    name: customName?.trim() || generateRoomName(),
   };
 }
 

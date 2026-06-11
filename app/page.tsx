@@ -25,13 +25,18 @@ import {
   DoorOpen,
   UserRound,
   Palette,
-  ListTree
+  ListTree,
+  Copy,
+  Check,
+  Hash,
+  ArrowRight
 } from 'lucide-react';
 import { useSocketState } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
-import type { MemeAudio, Message } from '@/lib/message-types';
+import type { MemeAudio, Message, ChatRoom } from '@/lib/message-types';
 import { getMemeAudioPreviewLabel } from '@/lib/meme-utils';
+import { generateRoomName } from '@/lib/room-utils';
 
 const MEME_PROVIDER_LABELS: Record<MemeAudio['provider'], string> = {
   myinstants: 'MyInstants',
@@ -325,6 +330,12 @@ export default function Home() {
   const { isSupported: isPushSupported, subscription: pushSubscription, permission, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const [replyTo, setReplyTo] = useState<{ id: string; nickname: string; text: string } | null>(null);
 
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [pendingRoom, setPendingRoom] = useState<ChatRoom | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [pendingRoomName, setPendingRoomName] = useState('');
+
   const [inputVal, setInputVal] = useState('');
   const [composerMode, setComposerMode] = useState<'text' | 'meme'>('text');
   const [memeQuery, setMemeQuery] = useState('');
@@ -458,11 +469,25 @@ export default function Home() {
     }
   };
 
+  const handleConfirmCreateRoom = () => {
+    clearRoomError();
+    setShowRoomTools(false);
+    setShowProfileMenu(false);
+    createRoom(pendingRoomName.trim() || undefined);
+    setShowCreateModal(false);
+  };
+
+  const handleConfirmLeaveRoom = () => {
+    leaveRoom(pendingRoom?.key);
+    setShowLeaveModal(false);
+    setPendingRoom(null);
+  };
+
   const handleCreateRoom = () => {
     clearRoomError();
-    setShowRoomTools(true);
-    setShowProfileMenu(false);
-    createRoom();
+    const defaultName = generateRoomName();
+    setPendingRoomName(defaultName);
+    setShowCreateModal(true);
   };
 
   const handleJoinRoom = async () => {
@@ -793,66 +818,143 @@ export default function Home() {
 
   if (!activeRoom) {
     return (
-      <div style={{ height: viewportHeight }} className="flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4">
-        <div className="w-full max-w-md rounded-3xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 p-5 shadow-xl space-y-4">
-          <div className="space-y-1">
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Choose your chat room</h1>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Create a private room or join one using a 4-digit key.</p>
+      <div style={{ height: viewportHeight }} className="relative flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4 overflow-hidden animate-fade-in">
+        {/* Ambient background glows */}
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-violet-400/10 dark:bg-violet-600/5 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-400/10 dark:bg-indigo-600/5 blur-[120px] pointer-events-none" />
+
+        <div className="w-full max-w-md rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-xl p-5 sm:p-6 shadow-2xl relative z-10 flex flex-col max-h-[85vh] sm:max-h-[80vh] overflow-hidden">
+          <div className="text-center space-y-1.5 shrink-0">
+            <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 mb-1 border border-violet-200/30 dark:border-violet-800/30">
+              <Ghost className="h-5 w-5 animate-float" />
+            </div>
+            <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Choose your chat room
+            </h1>
+            <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 max-w-xs mx-auto leading-relaxed">
+              Create a private room or enter a 4-digit key to slip into an anonymous space.
+            </p>
           </div>
 
-          <button
-            onClick={handleCreateRoom}
-            disabled={isJoiningRoom}
-            className="w-full rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-zinc-300 dark:disabled:bg-zinc-700 text-white text-sm font-semibold py-2.5 transition-colors"
-          >
-            {isJoiningRoom ? 'Creating...' : 'Create Room'}
-          </button>
-
-          <div className="relative text-center text-[10px] uppercase tracking-wider text-zinc-400">
-            <span className="bg-white dark:bg-zinc-900 px-2 relative z-10">or</span>
-            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-zinc-200/80 dark:border-zinc-800/80" />
-          </div>
-
-          <div className="space-y-2">
-            <input
-              value={joinRoomKey}
-              onChange={(e) => setJoinRoomKey(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              placeholder="Enter 4-digit room key"
-              aria-label="Room key"
-              aria-invalid={Boolean(roomJoinError)}
-              aria-describedby={roomJoinError ? 'room-join-error' : undefined}
-              className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm font-mono tracking-[0.2em] text-center outline-none focus:border-violet-500"
-            />
+          <div className="space-y-3.5 mt-4 shrink-0">
+            {/* Create Room trigger */}
             <button
-              onClick={handleJoinRoom}
-              disabled={joinRoomKey.length !== 4 || isJoiningRoom}
-              className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-100 text-sm font-semibold py-2.5 transition-colors"
+              onClick={handleCreateRoom}
+              disabled={isJoiningRoom}
+              className="w-full flex items-center justify-between gap-3 rounded-2xl border border-dashed border-zinc-200 hover:border-violet-500/50 dark:border-zinc-800 dark:hover:border-violet-500/40 bg-zinc-50/50 hover:bg-violet-50/20 dark:bg-zinc-900/30 dark:hover:bg-violet-950/10 p-3.5 sm:p-4 transition-all group cursor-pointer"
             >
-              {isJoiningRoom ? 'Joining...' : 'Join Room'}
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 flex items-center justify-center transition-transform group-hover:scale-110">
+                  <Plus className="h-5 w-5" />
+                </div>
+                <div className="text-left">
+                  <span className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                    {isJoiningRoom ? 'Creating...' : 'Create Room'}
+                  </span>
+                  <span className="block text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                    Start a new private room
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10px] font-semibold text-violet-600 dark:text-violet-400 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-0.5">
+                Go <ArrowRight className="h-2.5 w-2.5" />
+              </span>
             </button>
+
+            {/* Join Room inline group */}
+            <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200/60 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/30 p-3.5 sm:p-4">
+              <div className="text-center sm:text-left">
+                <span className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                  Enter 4-digit room key
+                </span>
+                <span className="block text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                  Join an existing room key
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={joinRoomKey}
+                  onChange={(e) => setJoinRoomKey(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="0000"
+                  aria-label="Room key"
+                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-sm font-mono tracking-[0.2em] text-center outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all"
+                />
+                <button
+                  onClick={handleJoinRoom}
+                  disabled={joinRoomKey.length !== 4 || isJoiningRoom}
+                  className="rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-4 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  {isJoiningRoom ? '...' : 'Join'}
+                </button>
+              </div>
+            </div>
           </div>
 
           {roomJoinError && (
-            <p id="room-join-error" className="text-xs text-red-500 text-center">{roomJoinError}</p>
+            <p className="text-xs text-red-500 text-center animate-pulse font-medium shrink-0 mt-2">{roomJoinError}</p>
           )}
 
+          {/* Joined Rooms List (Single-Column for optimization and proper inner scroll) */}
           {joinedRooms.length > 0 && (
-            <div className="space-y-2 pt-1">
-              <p className="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                Joined rooms
+            <div className="mt-4 pt-3 border-t border-zinc-200/50 dark:border-zinc-800/80 flex-1 flex flex-col min-h-0 overflow-hidden">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 shrink-0 mb-2">
+                <ListTree className="h-3.5 w-3.5" />
+                Joined Rooms ({joinedRooms.length})
               </p>
-              <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
-                {joinedRooms.map((room) => (
-                  <button
-                    key={room.key}
-                    onClick={() => handleSwitchRoom(room.key)}
-                    disabled={isJoiningRoom}
-                    className="flex w-full items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 text-left text-xs text-zinc-700 dark:text-zinc-200 transition-colors disabled:opacity-60"
-                  >
-                    <span className="truncate">{room.name}</span>
-                    <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400">#{room.key}</span>
-                  </button>
-                ))}
+              
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar min-h-0">
+                {joinedRooms.map((room) => {
+                  const isCopied = copiedKey === room.key;
+                  return (
+                    <motion.div
+                      key={room.key}
+                      whileHover={{ scale: 1.01, y: -0.5 }}
+                      className="group relative flex items-center justify-between rounded-xl border border-zinc-200/60 dark:border-zinc-800/80 bg-white/40 dark:bg-zinc-900/40 p-2.5 transition-all duration-300 hover:border-violet-500/50 dark:hover:border-violet-500/40 hover:bg-white/80 dark:hover:bg-zinc-900/80 hover:shadow-md dark:hover:shadow-violet-950/25 cursor-pointer"
+                      onClick={() => handleSwitchRoom(room.key)}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="font-display font-semibold text-xs text-zinc-850 dark:text-zinc-200 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400">
+                          {room.name}
+                        </span>
+                        
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(room.key);
+                            setCopiedKey(room.key);
+                            setTimeout(() => setCopiedKey(null), 1500);
+                          }}
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-mono transition-all border shrink-0 ${
+                            isCopied
+                              ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/50'
+                              : 'bg-zinc-100 dark:bg-zinc-800/70 text-zinc-500 dark:text-zinc-450 border-zinc-200/20 dark:border-zinc-700/20 hover:border-violet-500/30 hover:text-violet-600 dark:hover:text-violet-400'
+                          }`}
+                          title="Copy key"
+                        >
+                          {isCopied ? <Check className="h-2.5 w-2.5" /> : null}
+                          <span>{room.key}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span className="text-[9px] font-semibold text-violet-650 dark:text-violet-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                          Enter <ArrowRight className="h-2.5 w-2.5" />
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingRoom(room);
+                            setShowLeaveModal(true);
+                          }}
+                          className="p-1 rounded text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all cursor-pointer"
+                          title="Leave room"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -874,42 +976,49 @@ export default function Home() {
       <div className="mx-auto flex flex-col h-full w-full max-w-3xl relative px-4 sm:px-4">
 
       {/* 1. Header Navigation Bar */}
-      <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl border border-zinc-200/60 dark:border-zinc-900 bg-white/85 dark:bg-zinc-950/85 backdrop-blur-md shadow-md select-none transition-all shrink-0">
+      <header className="sticky top-3 z-40 mt-3 mb-2 mx-auto w-full max-w-2xl rounded-3xl border border-zinc-200 dark:border-zinc-800/80 bg-zinc-100/90 dark:bg-zinc-900/90 backdrop-blur-md shadow-md select-none transition-all shrink-0">
         <div className="flex w-full items-center gap-2 px-3 py-2 sm:h-14 sm:px-4">
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={toggleRoomTools}
               className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
                 showRoomTools
-                  ? 'border-violet-300 dark:border-violet-700 bg-violet-100 dark:bg-violet-900/40'
-                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200/50 dark:border-zinc-800/50'
+                  ? 'border-violet-350 dark:border-violet-700 bg-violet-100 dark:bg-violet-900/40'
+                  : 'bg-zinc-200/50 dark:bg-zinc-950/40 border-zinc-200 dark:border-zinc-800/30'
               }`}
               aria-label={showRoomTools ? 'Close room list' : 'Open room list'}
               title={showRoomTools ? 'Close room list' : 'Open room list'}
             >
               <Ghost className="h-5 w-5 text-violet-600 dark:text-violet-400" />
             </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-display font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-50">Wisp</span>
-                <span className="inline-flex items-center rounded-full bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 text-[9px] font-mono text-zinc-500 dark:text-zinc-400">
-                  {onlineCount} active
+            <div className="min-w-0 flex items-center gap-2">
+              <span className="font-display font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-55 shrink-0">Wisp</span>
+              <span className="text-[10px] text-zinc-400 dark:text-zinc-500 shrink-0 font-medium">·</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="block truncate text-[11px] font-semibold text-zinc-850 dark:text-zinc-200">
+                  {currentRoom.name}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-violet-50 dark:bg-violet-950/40 border border-violet-200/40 dark:border-violet-850 px-2.5 py-0.5 text-[10px] font-mono font-bold text-violet-600 dark:text-violet-400 shrink-0 tracking-wider shadow-sm">
+                  {currentRoom.key}
                 </span>
               </div>
-              <span className="block max-w-[170px] truncate text-[10px] font-mono text-violet-600 dark:text-violet-300">
-                {currentRoom.name} · #{currentRoom.key}
-              </span>
             </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-3">
+            {/* Repositioned active indicator left of wifi with just dot and count */}
+            <div className="flex items-center gap-1 text-xs font-semibold text-emerald-500 select-none">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className="font-mono">{onlineCount}</span>
+            </div>
+
             <div className="text-xs">
               {isConnected ? (
                 <span className="text-emerald-500" title="Connected">
                   <Wifi className="h-4 w-4" />
                 </span>
               ) : (
-                <span className="text-red-500" title="Reconnecting">
+                <span className="text-red-505" title="Reconnecting">
                   <WifiOff className="h-4 w-4 animate-pulse" />
                 </span>
               )}
@@ -917,7 +1026,7 @@ export default function Home() {
 
             <button
               onClick={regenerateUserNickname}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200/70 bg-zinc-50 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
               aria-label="Refresh username"
               title="Refresh username"
             >
@@ -926,7 +1035,7 @@ export default function Home() {
 
             <button
               onClick={() => setShowProfileMenu((prev) => !prev)}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200/70 bg-zinc-50 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800/80 transition-colors shadow-sm cursor-pointer"
               aria-label={showProfileMenu ? 'Close profile menu' : 'Open profile menu'}
               aria-expanded={showProfileMenu}
               title={showProfileMenu ? 'Close profile menu' : 'Profile menu'}
@@ -942,19 +1051,19 @@ export default function Home() {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="border-t border-zinc-200/70 dark:border-zinc-800/70 px-3 py-2.5 sm:px-4"
+              className="border-t border-zinc-205/60 dark:border-zinc-800/60 px-3 py-2.5 sm:px-4"
             >
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={handleCreateRoom}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-750 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Create room
                 </button>
                 <button
                   onClick={toggleTheme}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-750 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700"
                   id="theme_switch"
                 >
                   <Palette className="h-3.5 w-3.5" />
@@ -963,14 +1072,14 @@ export default function Home() {
                 <button
                   onClick={toggleSoundEnabled}
                   id="sound_switch"
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-750 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700"
                 >
                   {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
                   {soundEnabled ? 'Mute' : 'Unmute'}
                 </button>
                 <button
                   onClick={toggleRoomTools}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-750 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700"
                 >
                   <ListTree className="h-3.5 w-3.5" />
                   Rooms
@@ -979,11 +1088,13 @@ export default function Home() {
               <div className="mt-2.5 grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
-                    leaveRoom();
+                    if (activeRoom) {
+                      setPendingRoom(activeRoom);
+                      setShowLeaveModal(true);
+                    }
                     setShowProfileMenu(false);
-                    setShowRoomTools(false);
                   }}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200/70 dark:border-amber-900/70 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-950/50"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200/70 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-2.5 py-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-950/40"
                 >
                   <DoorOpen className="h-3.5 w-3.5" />
                   Leave room
@@ -992,9 +1103,8 @@ export default function Home() {
                   onClick={() => {
                     exitRoom();
                     setShowProfileMenu(false);
-                    setShowRoomTools(false);
                   }}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/70 bg-red-50 dark:bg-red-950/30 px-2.5 py-2 text-[11px] font-semibold text-red-600 dark:text-red-300 transition-colors hover:bg-red-100 dark:hover:bg-red-950/50"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200/70 dark:border-red-900/50 bg-red-50 dark:bg-red-955/20 px-2.5 py-2 text-[11px] font-semibold text-red-650 dark:text-red-355 transition-colors hover:bg-red-100 dark:hover:bg-red-950/40"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   Exit room
@@ -1061,13 +1171,13 @@ export default function Home() {
                     onClick={() => handleSwitchRoom(room.key)}
                     className={`flex w-full items-center justify-between rounded-xl border px-2.5 py-2 text-left transition-colors ${
                       room.key === currentRoom.key
-                        ? 'border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
-                        : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                        ? 'border-violet-400 bg-violet-150 text-violet-700 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
+                        : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-105 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                     }`}
-                    title={`${room.name} (#${room.key})`}
+                    title={`${room.name} (${room.key})`}
                   >
-                    <span className="truncate text-xs">{room.name}</span>
-                    <span className="ml-2 shrink-0 font-mono text-[10px]">#{room.key}</span>
+                    <span className="truncate text-xs font-medium">{room.name}</span>
+                    <span className="ml-2 shrink-0 font-mono text-[10px] text-violet-600 dark:text-violet-450 bg-violet-50 dark:bg-violet-955/40 px-1.5 py-0.5 rounded border border-violet-200/20 dark:border-violet-800/20 font-bold tracking-wider">{room.key}</span>
                   </button>
                 ))}
               </div>
@@ -1141,10 +1251,10 @@ export default function Home() {
                   <Ghost className="h-5 w-5 text-zinc-400" />
                 </div>
                 <h3 className="text-sm font-medium tracking-tight text-neutral-800 dark:text-neutral-200">
-                  Aligning Quantum Portals
+                  Establishing Room Connection
                 </h3>
                 <p className="text-xs text-ghost-light-sec dark:text-ghost-dark-sec leading-relaxed">
-                  Connecting to room #{currentRoom.key}. Establishing socket pipeline, preparing your temporary memory sandbox.
+                  Connecting to room {currentRoom.key}. Establishing socket pipeline, preparing your temporary memory sandbox.
                 </p>
               </div>
             </motion.div>
@@ -1238,13 +1348,6 @@ export default function Home() {
           className="w-full pt-2 bg-transparent px-4 sm:px-4"
         >
           <div className="flex flex-col">
-            <div className="mb-2 flex items-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white/80 dark:bg-zinc-900/70 px-2.5 py-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400 w-fit max-w-full">
-              <Sparkle className="h-3.5 w-3.5 text-violet-500 dark:text-violet-400 shrink-0" />
-              <span className="shrink-0 text-zinc-400 dark:text-zinc-500">You:</span>
-              <span className="truncate text-violet-600 dark:text-violet-300 font-semibold">
-                {nickname || 'Resolving...'}
-              </span>
-            </div>
             {/* Rate limiter error banner / Network Error Banner */}
             <AnimatePresence>
               {error && (
@@ -1457,7 +1560,7 @@ export default function Home() {
                 value={cooldownLeft > 0 ? "" : inputVal}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder={cooldownLeft > 0 ? `Hold up bro, let it cook (${cooldownLeft}s)...` : `Whisper to the void...`}
+                placeholder={cooldownLeft > 0 ? `Hold up bro, let it cook (${cooldownLeft}s)...` : `${nickname || 'You'} is whispering...`}
                 className={`flex-1 resize-none bg-transparent pl-0 pr-1 py-1 text-sm outline-none focus:outline-none custom-scrollbar min-h-[24px] max-h-[80px] transition-all ${
                   cooldownLeft > 0 
                   ? 'text-zinc-400 dark:text-zinc-500 placeholder-zinc-450 dark:placeholder-zinc-650 cursor-not-allowed' 
@@ -1582,6 +1685,136 @@ export default function Home() {
               >
                 Enter the Sanctuary
               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* 4. Modals */}
+    <AnimatePresence>
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowCreateModal(false)}
+            className="absolute inset-0 bg-zinc-950/60 backdrop-blur-md"
+          />
+
+          <motion.div
+            initial={{ scale: 0.95, y: 15, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: 10, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 350 }}
+            className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-2xl"
+          >
+            <div className="space-y-4 text-left">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-100/30 dark:border-violet-800/30">
+                  <Plus className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
+                    Create Chat Room
+                  </h2>
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
+                    Custom Room Name (Optional)
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 font-mono">
+                  Room Name
+                </label>
+                <input
+                  type="text"
+                  value={pendingRoomName}
+                  onChange={(e) => setPendingRoomName(e.target.value)}
+                  placeholder="Enter room name..."
+                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmCreateRoom}
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors cursor-pointer"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    <AnimatePresence>
+      {showLeaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              setShowLeaveModal(false);
+              setPendingRoom(null);
+            }}
+            className="absolute inset-0 bg-zinc-950/60 backdrop-blur-md"
+          />
+
+          <motion.div
+            initial={{ scale: 0.95, y: 15, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: 10, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 350 }}
+            className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-2xl"
+          >
+            <div className="space-y-4 text-left">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-100/30 dark:border-amber-800/30">
+                  <DoorOpen className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
+                    Leave Chat Room?
+                  </h2>
+                  <p className="text-[10px] text-amber-650 dark:text-amber-400 font-mono">
+                    {pendingRoom?.name || currentRoom?.name}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Leaving this room removes it from your saved list. To rejoin in the future, you will need to enter the 4-digit room key manually.
+              </p>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setShowLeaveModal(false);
+                    setPendingRoom(null);
+                  }}
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmLeaveRoom}
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold bg-amber-650 hover:bg-amber-700 text-white transition-colors cursor-pointer"
+                >
+                  Leave Room
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>
