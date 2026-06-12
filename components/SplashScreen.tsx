@@ -1,21 +1,53 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Ghost } from 'lucide-react';
 
 export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
   const [isVisible, setIsVisible] = useState(true);
+  const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const onFinishRef = useRef(onFinish);
+  useEffect(() => {
+    onFinishRef.current = onFinish;
+  }, [onFinish]);
+
+  const handleDismiss = useCallback(() => {
+    setIsVisible((visible) => {
+      if (!visible) return visible;
+
+      if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+
+      exitTimerRef.current = setTimeout(() => {
+        onFinishRef.current();
+      }, 800); // Matches the duration of the exit transition
+
+      return false;
+    });
+  }, []);
 
   useEffect(() => {
-    // Automatically dismiss the splash screen
-    const timer = setTimeout(() => {
-      setIsVisible(false);
-      setTimeout(onFinish, 800); // 800ms exit transition
-    }, 3800); // Extended slightly so the luxurious animations can breathe
+    // Automatically dismiss the splash screen after a short delay
+    autoDismissTimerRef.current = setTimeout(() => {
+      handleDismiss();
+    }, 2500); // 2.5s ensures the "Anonymous Realtime Chat" animation completes and displays fully before transition
 
-    return () => clearTimeout(timer);
-  }, [onFinish]);
+    return () => {
+      if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+    };
+  }, [handleDismiss]);
+
+  useEffect(() => {
+    const handleKeyDown = () => {
+      handleDismiss();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleDismiss]);
 
   // Full-screen ambient smoke variants - Sweeping, lazy, and hyper-smooth
   const smokeTopLeft = {
@@ -62,7 +94,8 @@ export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, filter: "blur(20px)", scale: 1.05 }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#030303] overflow-hidden"
+          onClick={handleDismiss}
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#030303] overflow-hidden cursor-pointer select-none"
         >
           {/* Full Screen Ethereal Smoke Glows */}
           <div className="absolute inset-0 pointer-events-none opacity-50 mix-blend-screen">
@@ -138,6 +171,16 @@ export default function SplashScreen({ onFinish }: { onFinish: () => void }) {
             </motion.p>
             
           </div>
+
+          {/* Tap/Click anywhere to skip helper */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.4 }}
+            transition={{ delay: 0.8, duration: 0.5 }}
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 text-[9px] font-mono tracking-[0.2em] uppercase text-zinc-500 pointer-events-none select-none"
+          >
+            Tap anywhere to skip
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
