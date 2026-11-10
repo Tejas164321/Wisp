@@ -1,32 +1,119 @@
+<div align="center">
+
 # Wisp
 
-Wisp is an anonymous, ephemeral real-time chat application. Users generate a nickname locally, create or join four-digit rooms, exchange text or meme audio, and can install the app as a progressive web app (PWA). No account is required.
+**Anonymous, ephemeral real-time chat. No account, no history, no trace.**
 
-Messages are intentionally temporary: Redis-backed rooms expire after 24 hours and messages expire after 3 hours. When Redis is not configured, the server uses an in-memory fallback suitable for local development only.
+![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Socket.IO](https://img.shields.io/badge/Socket.IO-010101?logo=socketdotio&logoColor=white)
+![Upstash Redis](https://img.shields.io/badge/Upstash-Redis-00E9A3?logo=upstash&logoColor=black)
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)
+
+<img src="./public/hero-banner.png" alt="Wisp chat app" width="800" />
+
+</div>
+
+---
+
+## Overview
+
+Wisp lets anyone jump into a chat in seconds. Your nickname is generated in the browser, you create or join a four-digit room, and you talk with text or meme audio. Rooms expire after 24 hours and messages after 3 hours, so conversations disappear on their own.
+
+It can be installed as a PWA and works without Redis for local development.
+
+---
 
 ## Features
 
-- Anonymous nicknames generated and stored in the browser
-- Four-digit chat room keys with memorable room names
-- Real-time messaging over Socket.IO
-- HTTP polling fallback when WebSocket connectivity is unavailable
-- Reply-to-message interactions, including swipe/drag gestures on mobile
-- Text sanitization, profanity filtering, spam detection, and server-side rate limiting
-- Meme audio search across MyInstants, Voicy, 101Soundboards, Freesound, Pixabay, and Mixkit
-- Safe audio URL validation and a rate-limited MyInstants streaming proxy
-- Optional Web Push notifications
-- Optional Upstash Redis persistence with automatic in-memory fallback
-- Installable PWA with offline app shell support
-- Light and dark themes, responsive mobile-first UI, sound effects, and haptic feedback
+| Area | Highlights |
+|------|------------|
+| **Anonymity** | Nicknames generated and stored in the browser, no sign-up |
+| **Rooms** | Four-digit room keys, memorable room names, recent rooms list (up to 20) |
+| **Messaging** | Real-time Socket.IO with HTTP polling fallback, reply-to-message, swipe and drag gestures on mobile |
+| **Meme audio** | Search across MyInstants, Voicy, 101Soundboards, Freesound, Pixabay, and Mixkit |
+| **Safety** | Text sanitization, profanity filter, spam detection, server-side rate limiting, safe audio URL validation |
+| **Notifications** | Optional Web Push |
+| **Storage** | Optional Upstash Redis with automatic in-memory fallback |
+| **Experience** | Installable PWA with offline app shell, light and dark themes, sound effects, haptic feedback |
 
-## Requirements
+---
 
-- Node.js 20 or newer
-- npm
+## How It Works
+
+```mermaid
+flowchart LR
+    U([User]) --> B
+
+    subgraph B[Browser]
+        UI[Next.js UI]
+        SC[Socket Context<br/>+ polling fallback]
+        SW[Service Worker<br/>PWA + Push]
+    end
+
+    subgraph S[Custom Node Server · server.ts]
+        NX[Next.js]
+        IO[Socket.IO]
+        API[HTTP API]
+    end
+
+    UI --> SC
+    SC <-->|WebSocket| IO
+    SC <-->|Polling| API
+    SW -.->|Push subscription| API
+
+    IO --> ST[(Upstash Redis<br/>or in-memory)]
+    API --> ST
+    API -->|Search and proxy| MP[Meme audio<br/>providers]
+    API -.->|Web Push| PS[Push service]
+```
+
+### Message Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant Server
+    participant Store as Redis / Memory
+
+    User->>Browser: Send message
+    alt WebSocket connected
+        Browser->>Server: Socket.IO event
+    else WebSocket unavailable
+        Browser->>Server: POST /api/messages
+    end
+    Server->>Server: Validate, sanitize, rate limit
+    Server->>Store: Save message (3 hour TTL)
+    Server-->>Browser: Deliver to everyone in the room
+    Note over Store: Message expires after 3 hours
+```
+
+Clients on the polling path fetch new messages with `GET /api/messages`.
+
+### Data Retention
+
+| Data | Lifetime |
+|------|----------|
+| Rooms | 24 hours |
+| Messages | 3 hours (up to 200 recent message IDs per room) |
+| Push subscriptions | Until removed or expired |
+| Presence and rate-limit keys | Short-lived |
+
+Without Redis credentials, the same data lives in process memory. That is fine for development, but it is cleared on restart and does not work across multiple instances.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 20 or later and npm
 - Upstash Redis (recommended for hosted deployments)
-- VAPID keys (optional, only required for Web Push notifications)
+- VAPID keys (only needed for Web Push)
 
-## Quick start
+### Run locally
 
 ```bash
 git clone https://github.com/Tejas164321/Wisp.git
@@ -36,95 +123,57 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). The app runs without Redis or push credentials.
 
-The app can run locally without Redis or push credentials. In that mode, messages and rooms exist only in the running Node.js process and are lost when the process restarts.
+### Scripts
 
-## Environment variables
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start the custom Next.js and Socket.IO server in development |
+| `npm run build` | Create the production build |
+| `npm start` | Start the server in production mode |
+| `npm run lint` | Run ESLint |
+| `npm run clean` | Clean Next.js build output |
 
-Create `.env.local` for local development or configure the same variables in your hosting provider.
+The server listens on port `3000` and binds to `0.0.0.0` by default. Set `HOSTNAME` to bind to a specific interface.
+
+---
+
+## Configuration
+
+Set these in `.env.local` for local development, or in your hosting provider's settings.
 
 | Variable | Required | Purpose |
-| --- | --- | --- |
-| `UPSTASH_REDIS_REST_URL` | Recommended | Upstash Redis REST endpoint for room, message, and push-subscription persistence |
-| `UPSTASH_REDIS_REST_TOKEN` | Recommended | Upstash Redis authentication token |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Optional | Public VAPID key used by browsers to subscribe to Web Push |
-| `VAPID_PRIVATE_KEY` | Optional | Server-only VAPID private key used to send Web Push notifications |
-| `APP_URL` | Optional | Public application URL used when configuring Web Push VAPID details |
-| `GEMINI_API_KEY` | Optional | Gemini API key reserved for AI Studio/runtime integrations |
+|----------|----------|---------|
+| `UPSTASH_REDIS_REST_URL` | Recommended | Upstash Redis REST endpoint |
+| `UPSTASH_REDIS_REST_TOKEN` | Recommended | Upstash Redis token |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Optional | Public VAPID key for Web Push subscriptions |
+| `VAPID_PRIVATE_KEY` | Optional | Server-only VAPID private key |
+| `APP_URL` | Optional | Public app URL used for Web Push VAPID details |
+| `GEMINI_API_KEY` | Optional | Reserved for AI Studio and runtime integrations |
 
-Never commit `.env.local`, Redis tokens, private VAPID keys, or other credentials. Use `.env.example` as the configuration template.
+> **Never commit** `.env.local`, Redis tokens, or private VAPID keys.
 
-### Generating VAPID keys
-
-If Web Push is enabled, generate a key pair with the `web-push` CLI:
+To enable Web Push, generate a key pair:
 
 ```bash
 npx web-push generate-vapid-keys
 ```
 
-Set the public key in `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and the private key in `VAPID_PRIVATE_KEY`. The public key is exposed to the browser; the private key must remain server-only.
+Put the public key in `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and the private key in `VAPID_PRIVATE_KEY`. Only the public key is exposed to the browser.
 
-## Available scripts
-
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start the custom Next.js and Socket.IO server in development mode |
-| `npm run build` | Create the production Next.js build |
-| `npm start` | Start the custom server in production mode |
-| `npm run lint` | Run ESLint |
-| `npm run clean` | Clean Next.js build output |
-
-For a production-like local run:
-
-```bash
-npm run build
-npm start
-```
-
-The server listens on port `3000`. Set `HOSTNAME` when the process must bind to a specific interface; the default is `0.0.0.0`.
-
-## How it works
-
-### Client
-
-- `app/page.tsx` contains the main chat experience and room UI.
-- `context/SocketContext.tsx` owns the Socket.IO connection, room state, message state, local persistence, and polling fallback.
-- `context/ThemeContext.tsx` manages the theme preference.
-- `hooks/usePushNotifications.ts` manages browser notification permission and subscriptions.
-- `public/sw.js` handles the PWA service worker and notification clicks.
-
-The browser stores the generated nickname, client identifier, active room, and up to 20 recently joined rooms in `localStorage`. These values are not authentication credentials.
-
-### Server
-
-`server.ts` creates a Node HTTP server, attaches Socket.IO, and delegates regular requests to Next.js. Socket.IO handles room membership, presence counts, typing indicators, message delivery, and disconnect cleanup.
-
-The HTTP API is used by the polling fallback and for browser push subscription management. All message paths apply server-side validation and sanitization; client-side validation is not a security boundary.
-
-### Persistence and retention
-
-When configured, Upstash Redis stores:
-
-- Room records for 24 hours
-- Message records for 3 hours
-- Up to 200 recent message IDs per room
-- Push subscriptions until removed or expired
-- Short-lived presence and rate-limit keys
-
-Without valid Redis credentials, the same interfaces use process memory. This fallback is useful for development but does not work reliably across multiple instances and is cleared on restart.
+---
 
 ## HTTP API
 
-### `GET /api/messages`
-
-Fetch room history and refresh presence.
-
-Query parameters:
-
-- `roomKey`: required four-digit room key
-- `nickname`: optional presence identity
-- `clientId`: optional stable browser identity
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/messages` | Fetch room history and refresh presence. Params: `roomKey` (required), `nickname`, `clientId` |
+| `POST /api/messages` | Send a text or meme-audio message through the polling path. Requires `roomKey`, `nickname`, and `text` (or `type: "meme_audio"` with a `memeAudio` object) |
+| `POST /api/push` | Save a push subscription. Body needs `clientId` and `subscription` |
+| `DELETE /api/push?clientId=...` | Remove a push subscription |
+| `GET /api/memes?query=...` | Search meme-audio providers (results briefly cached in memory) |
+| `GET /api/memes/stream?url=...` | Rate-limited audio proxy for approved MyInstants URLs, with byte-range support |
 
 Example:
 
@@ -132,57 +181,49 @@ Example:
 curl 'http://localhost:3000/api/messages?roomKey=1234&clientId=local-client'
 ```
 
-Returns:
-
 ```json
-{
-  "messages": [],
-  "onlineCount": 1
-}
+{ "messages": [], "onlineCount": 1 }
 ```
 
-### `POST /api/messages`
+Optional `POST /api/messages` fields: `clientId`, `replyToId`, `replyToNickname`, `replyToText`.
 
-Submit a text or meme-audio message through the polling path.
+---
 
-Required fields:
+## Rules and Limits
 
-- `roomKey`
-- `nickname`
-- `text` for text messages, or `type: "meme_audio"` with a validated `memeAudio` object
-
-Optional fields include `clientId`, `replyToId`, `replyToNickname`, and `replyToText`.
-
-### `POST /api/push`
-
-Save a browser push subscription. The JSON body must include `clientId` and `subscription`.
-
-### `DELETE /api/push?clientId=...`
-
-Remove a saved browser push subscription.
-
-### `GET /api/memes?query=...`
-
-Search supported meme-audio providers. Results are normalized into the `MemeAudio` shape and cached briefly in memory.
-
-### `GET /api/memes/stream?url=...`
-
-Rate-limited audio proxy for approved MyInstants media URLs. The endpoint accepts byte-range requests so browser audio controls can seek when the upstream supports it.
-
-## Message and room rules
-
-- Room keys must contain exactly four digits.
-- Socket messages are rate-limited to one message every five seconds per connection.
-- Polling messages use a five-second Redis-backed rate limit when Redis is available.
+- Room keys must be exactly four digits.
+- Socket messages are limited to one every five seconds per connection. Polling uses the same limit through Redis when available.
 - Empty messages, spam, unsupported audio providers, invalid URLs, and oversized payloads are rejected.
-- Audio URLs must use HTTPS and match an approved provider host and path/extension rule.
-- Room history is temporary and should not be treated as durable storage.
+- Audio URLs must use HTTPS and match an approved provider host and path or extension rule.
+- All validation runs on the server, because client-side checks are not a security boundary.
+
+---
+
+## Project Structure
+
+```
+Wisp/
+├── app/                      # Next.js pages and API routes
+│   └── page.tsx              # Main chat experience
+├── components/               # Reusable UI components
+├── context/
+│   ├── SocketContext.tsx     # Socket.IO, rooms, messages, polling fallback
+│   └── ThemeContext.tsx      # Theme preference
+├── hooks/
+│   └── usePushNotifications.ts
+├── lib/                      # Redis, validation, message, room, audio helpers
+├── public/                   # PWA manifest, icons, sw.js
+├── scripts/                  # Local utility scripts
+└── server.ts                 # HTTP + Next.js + Socket.IO entry point
+```
+
+The browser stores the nickname, client ID, active room, and up to 20 recent rooms in `localStorage`. These are not authentication credentials.
+
+---
 
 ## Deployment
 
-Wisp requires a long-running Node.js process because Socket.IO is hosted by the custom server. Deploy the project as a Node service rather than a static-only Next.js export.
-
-General deployment steps:
+Wisp needs a **long-running Node.js process** because Socket.IO runs inside the custom server. Deploy it as a Node service, not a static-only Next.js export.
 
 ```bash
 npm ci
@@ -190,31 +231,24 @@ npm run build
 npm start
 ```
 
-Configure the environment variables in the hosting platform and expose the service on port `3000` (or use the platform's port mapping). Set `APP_URL` to the public HTTPS origin when using Web Push.
+1. Set the environment variables in your hosting platform.
+2. Expose port `3000`, or use the platform's port mapping.
+3. Set `APP_URL` to your public HTTPS origin if you use Web Push.
 
-For multiple application instances, configure a shared Redis database and use a Socket.IO deployment design that supports cross-instance events/sticky sessions. The in-memory fallback is single-process only.
+For multiple instances, use a shared Redis database and a Socket.IO setup that supports cross-instance events and sticky sessions. The in-memory fallback only works for a single process.
 
-## Security and privacy notes
+---
 
-- Wisp provides anonymity, not strong anonymity guarantees. Network operators, hosting providers, and upstream services may still observe traffic.
-- Do not use chat rooms for secrets or sensitive personal information.
-- Keep Redis and VAPID credentials server-side.
-- Review the terms and licensing requirements of each meme-audio provider before production use.
-- The application validates external audio URLs to reduce SSRF and unsafe media risks, but upstream provider availability can change.
+## Security and Privacy
 
-## Project structure
+- Wisp is anonymous, but it does not guarantee strong anonymity. Network operators, hosting providers, and upstream services may still see traffic.
+- Do not share secrets or sensitive personal information in rooms.
+- Keep Redis and VAPID credentials on the server.
+- External audio URLs are validated to reduce SSRF and unsafe media risks, but provider availability can change.
+- Check each meme-audio provider's terms and licensing before production use.
 
-```text
-app/                 Next.js pages and API routes
-components/          Reusable UI components
-context/             Client-side theme and Socket.IO state
-hooks/               Browser hooks, including push notifications
-lib/                 Redis, validation, message, room, and audio helpers
-public/              PWA manifest, icons, and service worker
-scripts/             Local utility scripts
-server.ts            Custom HTTP + Next.js + Socket.IO entry point
-```
+---
 
 ## License
 
-No license file is currently included. Treat the repository as all rights reserved unless the project owner adds an explicit license.
+No license file is currently included, so the repository is all rights reserved by default. To allow others to use it, add a `LICENSE` file, for example MIT.
